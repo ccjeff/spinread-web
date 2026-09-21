@@ -1,0 +1,31 @@
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
+
+export default function TopBar() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  return (
+    <header className="topbar">
+      <div className="topbar-inner">
+        <Link to="/" className="brand">
+          <span className="brand-dot" />
+          SpinRead
+        </Link>
+        <div className="topbar-right">
+          {user && <span className="topbar-user">{user.display_name || user.email}</span>}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              logout();
+              navigate("/login", { replace: true });
+            }}
+          >
+            退出登录
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
