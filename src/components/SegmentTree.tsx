@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import type { TimelineItem } from "../api/types";
 import { TIMELINE_TYPE_LABELS } from "../utils/labels";
 import { formatMs } from "../utils/format";
@@ -56,6 +57,8 @@ function displayOf(item: TimelineItem, pending: PendingEdit | undefined): Displa
   };
 }
 
+const RALLY_PREVIEW_COUNT = 5;
+
 interface SegmentTreeProps {
   items: TimelineItem[];
   activeItemId: string | null;
@@ -102,6 +105,18 @@ export default function SegmentTree({
   const groups = buildGroups(items);
   const rallyTotal = groups.reduce((n, g) => n + g.rallies.length, 0);
   const selectedCount = selected.size;
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
+  const toggleGroup = useCallback((segmentId: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(segmentId)) {
+        next.delete(segmentId);
+      } else {
+        next.add(segmentId);
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <section className="segments">
@@ -180,58 +195,78 @@ export default function SegmentTree({
                     />
                   )}
                 </div>
-                {group.rallies.map((rally, idx) => {
-                  const rPending = pending[rally.item_id];
-                  const rd = displayOf(rally, rPending);
-                  const rDuration = Math.max(0, rd.end_ms - rd.start_ms);
-                  const hits = hitsOf(rally);
+                {(() => {
+                  const expanded = expandedGroups.has(seg.item_id);
+                  const shownRallies = expanded
+                    ? group.rallies
+                    : group.rallies.slice(0, RALLY_PREVIEW_COUNT);
+                  const hiddenRallies = group.rallies.length - shownRallies.length;
                   return (
-                    <div key={rally.item_id} className="segment-unit segment-unit-rally">
-                      <div
-                        className={`segment-row segment-row-rally${
-                          rally.item_id === activeItemId ? " segment-row-active" : ""
-                        }${rPending?.deleted ? " segment-deleted" : ""}`}
-                        onClick={() => onPlayItem(rally)}
-                      >
-                        <input
-                          type="checkbox"
-                          className="rally-check"
-                          checked={selected.has(rally.item_id)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => onToggleSelect(rally)}
-                        />
-                        <span className="rally-label">回合 {idx + 1}</span>
-                        <span className="segment-time">
-                          {formatMs(rd.start_ms)}–{formatMs(rd.end_ms)}
-                        </span>
-                        <span className="segment-duration">{formatMs(rDuration)}</span>
-                        <span className="segment-hits">
-                          {hits !== null ? `${hits} 球` : "—"}
-                        </span>
-                        <span className="segment-confidence">{confidencePct(rally.confidence)}%</span>
-                        <span className="segment-export">
-                          <ExportButton
-                            entry={clipByItemId[rally.item_id] ?? null}
-                            onExport={() => onExport(rally)}
-                            onDownload={(entry) => onDownload(entry, rally)}
-                          />
-                        </span>
-                      </div>
-                      {editMode && (
-                        <EditControls
-                          item={rally}
-                          isTopLevel={false}
-                          pending={rPending}
-                          onNudge={(edge, delta) => onNudge(rally, edge, delta)}
-                          onTypeChange={() => undefined}
-                          onSplit={() => undefined}
-                          onMergeNext={() => undefined}
-                          onDelete={() => onDelete(rally)}
-                        />
+                    <>
+                      {shownRallies.map((rally, idx) => {
+                        const rPending = pending[rally.item_id];
+                        const rd = displayOf(rally, rPending);
+                        const rDuration = Math.max(0, rd.end_ms - rd.start_ms);
+                        const hits = hitsOf(rally);
+                        return (
+                          <div key={rally.item_id} className="segment-unit segment-unit-rally">
+                            <div
+                              className={`segment-row segment-row-rally${
+                                rally.item_id === activeItemId ? " segment-row-active" : ""
+                              }${rPending?.deleted ? " segment-deleted" : ""}`}
+                              onClick={() => onPlayItem(rally)}
+                            >
+                              <input
+                                type="checkbox"
+                                className="rally-check"
+                                checked={selected.has(rally.item_id)}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={() => onToggleSelect(rally)}
+                              />
+                              <span className="rally-label">回合 {idx + 1}</span>
+                              <span className="segment-time">
+                                {formatMs(rd.start_ms)}–{formatMs(rd.end_ms)}
+                              </span>
+                              <span className="segment-duration">{formatMs(rDuration)}</span>
+                              <span className="segment-hits">
+                                {hits !== null ? `${hits} 球` : "—"}
+                              </span>
+                              <span className="segment-confidence">{confidencePct(rally.confidence)}%</span>
+                              <span className="segment-export">
+                                <ExportButton
+                                  entry={clipByItemId[rally.item_id] ?? null}
+                                  onExport={() => onExport(rally)}
+                                  onDownload={(entry) => onDownload(entry, rally)}
+                                />
+                              </span>
+                            </div>
+                            {editMode && (
+                              <EditControls
+                                item={rally}
+                                isTopLevel={false}
+                                pending={rPending}
+                                onNudge={(edge, delta) => onNudge(rally, edge, delta)}
+                                onTypeChange={() => undefined}
+                                onSplit={() => undefined}
+                                onMergeNext={() => undefined}
+                                onDelete={() => onDelete(rally)}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                      {group.rallies.length > RALLY_PREVIEW_COUNT && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm rally-more"
+                          onClick={() => toggleGroup(seg.item_id)}
+                        >
+                          {expanded ? "折叠回合" : `展开剩余 ${hiddenRallies} 个回合`}
+                        </button>
                       )}
-                    </div>
+                    </>
                   );
-                })}
+                })()}
               </div>
             );
           })}

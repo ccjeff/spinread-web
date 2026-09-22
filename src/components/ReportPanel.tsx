@@ -19,6 +19,8 @@ function metricsSource(structured: Record<string, unknown>): Record<string, unkn
   return structured;
 }
 
+const MAX_EVIDENCE_CHIPS = 8;
+
 interface ReportPanelProps {
   report: AnalysisReport | null;
   unavailable: boolean;
@@ -137,6 +139,8 @@ function FindingCard({
   const category = FINDING_CATEGORY_LABELS[finding.category] ?? finding.category;
   const intervals = finding.evidence_intervals ?? [];
   const limitations = finding.limitations ?? [];
+  const shownIntervals = intervals.slice(0, MAX_EVIDENCE_CHIPS);
+  const hiddenCount = intervals.length - shownIntervals.length;
   return (
     <div className={`finding${low ? " finding-low" : ""}`}>
       <div className="finding-head">
@@ -147,7 +151,7 @@ function FindingCard({
       <p className="finding-obs">{finding.observation}</p>
       {intervals.length > 0 && (
         <div className="finding-evidence">
-          {intervals.map(([s, e], i) => (
+          {shownIntervals.map(([s, e], i) => (
             <button
               key={`${s}-${e}-${i}`}
               type="button"
@@ -157,6 +161,7 @@ function FindingCard({
               {formatMs(s)}–{formatMs(e)}
             </button>
           ))}
+          {hiddenCount > 0 && <span className="evidence-more">等 {intervals.length} 条证据</span>}
         </div>
       )}
       {limitations.length > 0 && (
