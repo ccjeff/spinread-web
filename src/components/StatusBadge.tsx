@@ -11,6 +11,7 @@ const STATE_TONES: Record<VideoState, Tone> = {
   QUALITY_CHECKING: "run",
   SEGMENTING: "run",
   BUILDING_TIMELINE: "run",
+  GENERATING_REPORT: "run",
   READY: "ok",
   PARTIAL_READY: "warn",
   RETRYABLE_FAILURE: "err",

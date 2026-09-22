@@ -1,11 +1,17 @@
 import type {
   ActiveTimeline,
+  AnalysisReport,
   CompleteUploadResponse,
   CompletedPart,
+  CreateClipRequest,
+  CreateHighlightRequest,
   CreateUploadRequest,
   CreateUploadResponse,
+  ExportManifest,
   LoginResponse,
   ProcessingStatus,
+  TimelineEditRequest,
+  TimelineEditResponse,
   User,
   VideoDetail,
   VideoSummary,
@@ -160,5 +166,41 @@ export const api = {
   },
   getActiveTimeline(id: string) {
     return apiRequest<ActiveTimeline>(`/videos/${id}/timelines/active`);
+  },
+  getTimelineVersion(id: string, version: number) {
+    return apiRequest<ActiveTimeline>(`/videos/${id}/timelines/${version}`);
+  },
+  submitTimelineEdits(id: string, body: TimelineEditRequest) {
+    return apiRequest<TimelineEditResponse>(`/videos/${id}/timeline-edits`, {
+      method: "POST",
+      body,
+    });
+  },
+  getActiveReport(id: string) {
+    return apiRequest<AnalysisReport>(`/videos/${id}/reports/active`);
+  },
+  createClip(body: CreateClipRequest) {
+    return apiRequest<ExportManifest>("/clips", { method: "POST", body });
+  },
+  listClips(videoId: string) {
+    return apiRequest<ExportManifest[]>(`/clips?video_id=${encodeURIComponent(videoId)}`);
+  },
+  getClip(clipId: string) {
+    return apiRequest<ExportManifest>(`/clips/${clipId}`);
+  },
+  createHighlightReel(videoId: string, timelineItemIds: string[]) {
+    const body: CreateHighlightRequest = {
+      video_id: videoId,
+      timeline_item_ids: timelineItemIds,
+    };
+    return apiRequest<ExportManifest>("/highlight-reels", { method: "POST", body });
+  },
+  getHighlightReel(id: string) {
+    return apiRequest<ExportManifest>(`/highlight-reels/${id}`);
+  },
+  createPipelineRun(id: string) {
+    return apiRequest<Record<string, unknown>>(`/videos/${id}/pipeline-runs`, {
+      method: "POST",
+    });
   },
 };

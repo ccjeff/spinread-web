@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { isFailureState, isProcessingState, isReadyState } from "../api/types";
 import type {
   ActiveTimeline,
+  AnalysisReport,
   ProcessingStatus,
   StageStatus,
+  TimelineEditOperation,
   TimelineItem,
   VideoDetail,
 } from "../api/types";
@@ -14,8 +16,12 @@ import StatusBadge from "../components/StatusBadge";
 import ProgressBar from "../components/ProgressBar";
 import Player from "../components/Player";
 import type { PlayerHandle } from "../components/Player";
-import SegmentList from "../components/SegmentList";
+import SegmentTree from "../components/SegmentTree";
+import type { PendingEdit } from "../components/EditControls";
+import ReportPanel from "../components/ReportPanel";
 import Filmstrip from "../components/Filmstrip";
+import { useExports } from "../hooks/useExports";
+import type { ExportEntry } from "../hooks/useExports";
 import { formatDateTime, formatMs } from "../utils/format";
 import {
   SESSION_TYPE_LABELS,
@@ -45,6 +51,53 @@ function stageIcon(status: StageStatus): { icon: string; className: string } {
   }
 }
 
+function buildOps(items: TimelineItem[], pending: Record<string, PendingEdit>): TimelineEditOperation[] {
+  const byId = new Map(items.map((i) => [i.item_id, i]));
+  const deletedTop = new Set<string>();
+  for (const [itemId, p] of Object.entries(pending)) {
+    const item = byId.get(itemId);
+    if (p.deleted && item && item.parent_id === null) deletedTop.add(itemId);
+  }
+  const ops: TimelineEditOperation[] = [];
+  for (const [itemId, p] of Object.entries(pending)) {
+    const item = byId.get(itemId);
+    if (!item) continue;
+    if (item.parent_id !== null && deletedTop.has(item.parent_id)) continue;
+    if (p.deleted) {
+      ops.push({ op: "DELETE", timeline_item_id: itemId });
+      continue;
+    }
+    if (p.boundary && (p.boundary.start_ms !== item.start_ms || p.boundary.end_ms !== item.end_ms)) {
+      ops.push({
+        op: "UPDATE_BOUNDARY",
+        timeline_item_id: itemId,
+        start_ms: p.boundary.start_ms,
+        end_ms: p.boundary.end_ms,
+      });
+    }
+    if (p.label && p.label !== item.type) {
+      ops.push({ op: "SET_LABEL", timeline_item_id: itemId, field: "type", value: p.label });
+    }
+    if (p.splitAtMs !== undefined) {
+      ops.push({ op: "SPLIT", timeline_item_id: itemId, at_ms: p.splitAtMs });
+    }
+    if (p.mergeNext) {
+      ops.push({ op: "MERGE_NEXT", timeline_item_id: itemId });
+    }
+  }
+  return ops;
+}
+
+function baseName(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 ? filename.slice(0, dot) : filename;
+}
+
+function msToName(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, "0")}s`;
+}
+
 export default function VideoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -52,14 +105,36 @@ export default function VideoDetailPage() {
   const [status, setStatus] = useState<ProcessingStatus | null>(null);
   const [timeline, setTimeline] = useState<ActiveTimeline | null>(null);
   const [timelineUnavailable, setTimelineUnavailable] = useState(false);
+  const [report, setReport] = useState<AnalysisReport | null>(null);
+  const [reportUnavailable, setReportUnavailable] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [pending, setPending] = useState<Record<string, PendingEdit>>({});
+  const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const playerRef = useRef<PlayerHandle | null>(null);
   const rangeEndRef = useRef<number | null>(null);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  const toastTimer = useRef<number | null>(null);
 
   const ready = video !== null && isReadyState(video.state);
   const failure = video !== null && isFailureState(video.state);
   const processing = video !== null && isProcessingState(video.state);
+
+  const showToast = useCallback((kind: "ok" | "err", text: string) => {
+    setToast({ kind, text });
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  const { clipByItemId, highlight, requestClip, requestHighlight, download } = useExports(
+    ready ? id : undefined,
+    timeline?.items ?? [],
+    useCallback((msg: string) => showToast("err", msg), [showToast]),
+  );
 
   useEffect(() => {
     if (!id) return;
@@ -68,8 +143,13 @@ export default function VideoDetailPage() {
     setStatus(null);
     setTimeline(null);
     setTimelineUnavailable(false);
+    setReport(null);
+    setReportUnavailable(false);
     setLoadError(null);
     setActiveItemId(null);
+    setEditMode(false);
+    setPending({});
+    setSelected(new Set());
     api
       .getVideo(id)
       .then((v) => {
@@ -131,13 +211,18 @@ export default function VideoDetailPage() {
     };
   }, [id, video, status]);
 
+  const timelineVersion = timeline?.version ?? 0;
+
   useEffect(() => {
     if (!id || !ready) return;
     let cancelled = false;
     api
       .getActiveTimeline(id)
       .then((tl) => {
-        if (!cancelled) setTimeline(tl);
+        if (!cancelled) {
+          setTimeline(tl);
+          setTimelineUnavailable(false);
+        }
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -149,7 +234,67 @@ export default function VideoDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, ready]);
+  }, [id, ready, timelineVersion]);
+
+  useEffect(() => {
+    if (!id || !ready) return;
+    let cancelled = false;
+    api
+      .getActiveReport(id)
+      .then((r) => {
+        if (!cancelled) {
+          setReport(r);
+          setReportUnavailable(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReport(null);
+          setReportUnavailable(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, ready, timelineVersion]);
+
+  const reportStale =
+    ready &&
+    timeline !== null &&
+    (reportUnavailable || (report !== null && report.timeline_version < timeline.version));
+
+  useEffect(() => {
+    if (!id || !reportStale) return;
+    let stopped = false;
+    const timer = window.setInterval(() => {
+      api
+        .getActiveReport(id)
+        .then((r) => {
+          if (stopped) return;
+          setReport(r);
+          setReportUnavailable(false);
+        })
+        .catch(() => undefined);
+    }, 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [id, reportStale]);
+
+  const ops = useMemo(
+    () => buildOps(timeline?.items ?? [], pending),
+    [timeline, pending],
+  );
+
+  useEffect(() => {
+    if (ops.length === 0) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [ops.length]);
 
   const playSegment = useCallback((item: TimelineItem) => {
     const startSec = Math.max(0, item.start_ms - PRE_ROLL_MS) / 1000;
@@ -173,11 +318,200 @@ export default function VideoDetailPage() {
     }
   }, []);
 
-  const handleFilmstripSeek = useCallback((seconds: number) => {
+  const handleSeek = useCallback((seconds: number) => {
     rangeEndRef.current = null;
     setActiveItemId(null);
     playerRef.current?.seekTo(seconds);
   }, []);
+
+  const refreshTimeline = useCallback(async () => {
+    if (!id) return;
+    try {
+      const tl = await api.getActiveTimeline(id);
+      setTimeline(tl);
+      setTimelineUnavailable(false);
+    } catch {
+      setTimelineUnavailable(true);
+    }
+  }, [id]);
+
+  const onNudge = useCallback((item: TimelineItem, edge: "start" | "end", deltaMs: number) => {
+    setPending((prev) => {
+      const cur: PendingEdit = { ...(prev[item.item_id] ?? {}) };
+      const base = cur.boundary ?? { start_ms: item.start_ms, end_ms: item.end_ms };
+      const next = { ...base };
+      if (edge === "start") {
+        next.start_ms = Math.max(0, base.start_ms + deltaMs);
+      } else {
+        next.end_ms = base.end_ms + deltaMs;
+      }
+      if (next.end_ms <= next.start_ms) return prev;
+      if (next.start_ms === item.start_ms && next.end_ms === item.end_ms) {
+        delete cur.boundary;
+      } else {
+        cur.boundary = next;
+      }
+      return { ...prev, [item.item_id]: cur };
+    });
+  }, []);
+
+  const onTypeChange = useCallback((item: TimelineItem, value: string) => {
+    setPending((prev) => {
+      const cur: PendingEdit = { ...(prev[item.item_id] ?? {}) };
+      if (value === item.type) {
+        delete cur.label;
+      } else {
+        cur.label = value;
+      }
+      return { ...prev, [item.item_id]: cur };
+    });
+  }, []);
+
+  const onSplit = useCallback(
+    (item: TimelineItem) => {
+      const t = playerRef.current?.currentTime();
+      if (t === undefined || t === null || t <= 0) {
+        showToast("err", "请先播放或拖动播放器到拆分位置");
+        return;
+      }
+      const atMs = Math.round(t * 1000);
+      const p = pendingRef.current[item.item_id];
+      const start = p?.boundary?.start_ms ?? item.start_ms;
+      const end = p?.boundary?.end_ms ?? item.end_ms;
+      if (atMs <= start || atMs >= end) {
+        showToast("err", `播放头不在该片段内（${formatMs(start)}–${formatMs(end)}）`);
+        return;
+      }
+      setPending((prev) => ({
+        ...prev,
+        [item.item_id]: { ...prev[item.item_id], splitAtMs: atMs },
+      }));
+    },
+    [showToast],
+  );
+
+  const onMergeNext = useCallback((item: TimelineItem) => {
+    setPending((prev) => {
+      const cur: PendingEdit = { ...(prev[item.item_id] ?? {}) };
+      cur.mergeNext = !cur.mergeNext;
+      if (!cur.mergeNext) delete cur.mergeNext;
+      return { ...prev, [item.item_id]: cur };
+    });
+  }, []);
+
+  const onDelete = useCallback((item: TimelineItem) => {
+    setPending((prev) => {
+      const cur: PendingEdit = { ...(prev[item.item_id] ?? {}) };
+      if (cur.deleted) {
+        delete cur.deleted;
+      } else {
+        cur.deleted = true;
+      }
+      return { ...prev, [item.item_id]: cur };
+    });
+  }, []);
+
+  const toggleEditMode = useCallback(() => {
+    if (editMode && ops.length > 0) {
+      if (!window.confirm(`有 ${ops.length} 项未保存的修改，退出编辑将丢弃，继续？`)) return;
+      setPending({});
+    }
+    setEditMode((v) => !v);
+  }, [editMode, ops.length]);
+
+  const resetEdits = useCallback(() => {
+    setPending({});
+  }, []);
+
+  const saveEdits = useCallback(async () => {
+    if (!id || !timeline || ops.length === 0 || saving) return;
+    setSaving(true);
+    try {
+      await api.submitTimelineEdits(id, {
+        base_timeline_version: timeline.version,
+        operations: ops,
+      });
+      setPending({});
+      setSelected(new Set());
+      showToast("ok", "已保存，指标正在重算");
+      await refreshTimeline();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        showToast("err", "时间线版本已被更新，已自动刷新，请重新应用修改");
+        setPending({});
+        await refreshTimeline();
+      } else {
+        showToast("err", err instanceof Error ? err.message : "保存失败");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [id, timeline, ops, saving, showToast, refreshTimeline]);
+
+  const onToggleSelect = useCallback((item: TimelineItem) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.item_id)) {
+        next.delete(item.item_id);
+      } else {
+        next.add(item.item_id);
+      }
+      return next;
+    });
+  }, []);
+
+  const onCreateHighlight = useCallback(() => {
+    const items = timeline?.items ?? [];
+    const ids = items
+      .filter((i) => selected.has(i.item_id))
+      .sort((a, b) => a.start_ms - b.start_ms)
+      .map((i) => i.item_id);
+    if (ids.length === 0) return;
+    requestHighlight(ids);
+  }, [timeline, selected, requestHighlight]);
+
+  const onDownload = useCallback(
+    (entry: ExportEntry, item: TimelineItem) => {
+      if (!video) return;
+      const name = `${baseName(video.filename)}_${msToName(item.start_ms)}-${msToName(item.end_ms)}.mp4`;
+      download(entry, name);
+    },
+    [video, download],
+  );
+
+  const onDownloadHighlight = useCallback(() => {
+    if (!video || !highlight) return;
+    const n = highlight.intervals.length;
+    download(highlight, `${baseName(video.filename)}_集锦_${n}段.mp4`);
+  }, [video, highlight, download]);
+
+  const rerun = useCallback(async () => {
+    if (!id) return;
+    if (!window.confirm("将重新运行完整分析流水线，期间时间线与报告会暂时不可用。继续？")) {
+      return;
+    }
+    try {
+      await api.createPipelineRun(id);
+      showToast("ok", "已触发重新分析");
+      setStatus(null);
+      setTimeline(null);
+      setTimelineUnavailable(false);
+      setReport(null);
+      setReportUnavailable(false);
+      setPending({});
+      setEditMode(false);
+      setSelected(new Set());
+      setActiveItemId(null);
+      const v = await api.getVideo(id);
+      setVideo(v);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        showToast("err", "已有分析在进行中");
+      } else {
+        showToast("err", err instanceof Error ? err.message : "触发重新分析失败");
+      }
+    }
+  }, [id, showToast]);
 
   if (loadError) {
     return (
@@ -227,9 +561,25 @@ export default function VideoDetailPage() {
               <span>{formatDateTime(video.created_at)}</span>
             </div>
           </div>
-          <button type="button" className="btn btn-ghost" onClick={() => navigate("/")}>
-            返回列表
-          </button>
+          <div className="page-header-actions">
+            {ready && (
+              <button
+                type="button"
+                className={`btn ${editMode ? "btn-primary" : "btn-ghost"}`}
+                onClick={toggleEditMode}
+              >
+                {editMode ? "退出编辑" : "编辑时间线"}
+              </button>
+            )}
+            {(ready || failure) && (
+              <button type="button" className="btn btn-ghost" onClick={() => void rerun()}>
+                重新分析
+              </button>
+            )}
+            <button type="button" className="btn btn-ghost" onClick={() => navigate("/")}>
+              返回列表
+            </button>
+          </div>
         </div>
 
         {video.state === "PARTIAL_READY" && (
@@ -272,9 +622,7 @@ export default function VideoDetailPage() {
                   return (
                     <li key={s.stage} className="stage-row">
                       <span className={`stage-icon ${icon.className}`}>{icon.icon}</span>
-                      <span className="stage-name">
-                        {STAGE_LABELS[s.stage] ?? s.stage}
-                      </span>
+                      <span className="stage-name">{STAGE_LABELS[s.stage] ?? s.stage}</span>
                       <span className="stage-status">
                         {s.status}
                         {s.attempt > 1 ? `（第 ${s.attempt} 次尝试）` : ""}
@@ -301,20 +649,67 @@ export default function VideoDetailPage() {
           <>
             <Player ref={playerRef} videoId={video.id} onTimeUpdate={handleTimeUpdate} />
             {durationMs > 0 && (
-              <Filmstrip videoId={video.id} durationMs={durationMs} onSeek={handleFilmstripSeek} />
+              <Filmstrip videoId={video.id} durationMs={durationMs} onSeek={handleSeek} />
             )}
+            <ReportPanel
+              report={report}
+              unavailable={reportUnavailable}
+              stale={reportStale}
+              onSeek={handleSeek}
+            />
             {timelineUnavailable && !timeline && (
               <div className="banner banner-warn">时间线尚未生成，暂无法展示片段列表。</div>
             )}
-            <SegmentList
+            <SegmentTree
               items={timeline?.items ?? []}
               activeItemId={activeItemId}
+              editMode={editMode}
+              pending={pending}
+              clipByItemId={clipByItemId}
+              selected={selected}
+              highlight={highlight}
               onPlayItem={playSegment}
               onPlayAll={playAll}
+              onNudge={onNudge}
+              onTypeChange={onTypeChange}
+              onSplit={onSplit}
+              onMergeNext={onMergeNext}
+              onDelete={onDelete}
+              onExport={requestClip}
+              onDownload={onDownload}
+              onToggleSelect={onToggleSelect}
+              onCreateHighlight={onCreateHighlight}
+              onDownloadHighlight={onDownloadHighlight}
             />
+            {editMode && (
+              <div className="edit-bar">
+                <span className="edit-bar-hint">
+                  {ops.length > 0 ? `有 ${ops.length} 项未保存的修改` : "编辑模式：暂无修改"}
+                </span>
+                <div className="edit-bar-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={resetEdits}
+                    disabled={ops.length === 0 || saving}
+                  >
+                    重置
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => void saveEdits()}
+                    disabled={ops.length === 0 || saving}
+                  >
+                    {saving ? "保存中…" : `保存修改（${ops.length} 项修改）`}
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
+      {toast && <div className={`toast toast-${toast.kind}`}>{toast.text}</div>}
     </div>
   );
 }

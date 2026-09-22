@@ -53,6 +53,7 @@ export type VideoState =
   | "QUALITY_CHECKING"
   | "SEGMENTING"
   | "BUILDING_TIMELINE"
+  | "GENERATING_REPORT"
   | "READY"
   | "PARTIAL_READY"
   | "RETRYABLE_FAILURE"
@@ -73,7 +74,16 @@ export interface VideoDetail extends VideoSummary {
   probe: Record<string, unknown> | null;
 }
 
-export type StageName = "PROBE" | "NORMALIZE" | "QUALITY" | "ACTIVITY" | "TIMELINE";
+export type StageName =
+  | "PROBE"
+  | "NORMALIZE"
+  | "QUALITY"
+  | "ACTIVITY"
+  | "RALLY"
+  | "EVENTS"
+  | "TIMELINE"
+  | "METRICS"
+  | "REPORT";
 
 export type StageStatus =
   | "QUEUED"
@@ -99,13 +109,21 @@ export interface ProcessingStatus {
   limitations: string[];
 }
 
-export type TimelineItemType = "RALLY_LIKE" | "BALL_PICKUP" | "BREAK" | "INSTRUCTION" | "UNKNOWN";
+export type TimelineItemType =
+  | "RALLY_LIKE"
+  | "BALL_PICKUP"
+  | "BREAK"
+  | "INSTRUCTION"
+  | "UNKNOWN"
+  | "RALLY"
+  | "HIT_CANDIDATE";
 
 export interface TimelineItem {
   item_id: string;
   type: TimelineItemType;
   start_ms: number;
   end_ms: number;
+  parent_id: string | null;
   actor: string | null;
   confidence: number;
   provenance: Record<string, unknown>;
@@ -119,6 +137,69 @@ export interface ActiveTimeline {
   items: TimelineItem[];
 }
 
+export type TimelineEditOperation =
+  | { op: "UPDATE_BOUNDARY"; timeline_item_id: string; start_ms: number; end_ms: number }
+  | { op: "SET_LABEL"; timeline_item_id: string; field: "type"; value: string }
+  | { op: "SPLIT"; timeline_item_id: string; at_ms: number }
+  | { op: "MERGE_NEXT"; timeline_item_id: string }
+  | { op: "DELETE"; timeline_item_id: string };
+
+export interface TimelineEditRequest {
+  base_timeline_version: number;
+  operations: TimelineEditOperation[];
+}
+
+export interface TimelineEditResponse {
+  timeline_id: string;
+  version: number;
+  n_items: number;
+}
+
+export interface ReportFinding {
+  id: string;
+  category: string;
+  observation: string;
+  evidence_intervals: [number, number][];
+  sample_count: number;
+  priority_score: number;
+  limitations: string[];
+  state: string;
+}
+
+export interface AnalysisReport {
+  report_id: string;
+  video_id: string;
+  timeline_version: number;
+  state: string;
+  metric_versions: Record<string, unknown>;
+  structured: Record<string, unknown>;
+  findings: ReportFinding[];
+}
+
+export interface ExportManifest {
+  clip_id: string;
+  video_id: string;
+  kind: string;
+  status: string;
+  intervals: [number, number][];
+  download_url: string | null;
+}
+
+export interface CreateClipRequest {
+  video_id: string;
+  timeline_item_id: string;
+  pre_roll_ms?: number;
+  post_roll_ms?: number;
+}
+
+export interface CreateHighlightRequest {
+  video_id: string;
+  timeline_item_ids: string[];
+}
+
+export const CLIP_PRE_ROLL_MS = 800;
+export const CLIP_POST_ROLL_MS = 1200;
+
 export function isProcessingState(state: VideoState): boolean {
   return (
     state === "UPLOAD_PENDING" ||
@@ -127,7 +208,8 @@ export function isProcessingState(state: VideoState): boolean {
     state === "NORMALIZING" ||
     state === "QUALITY_CHECKING" ||
     state === "SEGMENTING" ||
-    state === "BUILDING_TIMELINE"
+    state === "BUILDING_TIMELINE" ||
+    state === "GENERATING_REPORT"
   );
 }
 
