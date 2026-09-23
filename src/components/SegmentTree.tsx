@@ -229,7 +229,7 @@ export default function SegmentTree({
                               </span>
                               <span className="segment-duration">{formatMs(rDuration)}</span>
                               <span className="segment-hits">
-                                {hits !== null ? `${hits} 球` : "—"}
+                                {hits !== null ? `${rally.attributes["hit_count_estimated"] ? "约 " : ""}${hits} 次击球` : "—"}
                               </span>
                               <span className="segment-confidence">{confidencePct(rally.confidence)}%</span>
                               <span className="segment-export">
