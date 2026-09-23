@@ -48,7 +48,6 @@ export default function ReportPanel({ report, unavailable, stale, onSeek, player
     "rally_duration_ms",
   );
   const hitsPer = unwrap<{ mean?: number; max?: number }>(structured, "hits_per_rally");
-  const confCov = unwrap<number>(structured, "confidence_coverage");
   const dist = unwrap<Record<string, number>>(structured, "rally_length_distribution");
 
   const cards: { label: string; value: string }[] = [];
@@ -63,14 +62,11 @@ export default function ReportPanel({ report, unavailable, stale, onSeek, player
   if (hitsPer && typeof hitsPer.mean === "number") {
     cards.push({ label: "每回合击球均值", value: hitsPer.mean.toFixed(1) });
   }
-  if (typeof confCov === "number") {
-    const pct = confCov <= 1 ? confCov * 100 : confCov;
-    cards.push({ label: "置信度覆盖率", value: `${Math.round(pct)}%` });
-  }
+
 
   const distEntries = dist ? Object.entries(dist) : [];
   const distMax = distEntries.reduce((m, [, v]) => Math.max(m, v), 0);
-  const findings = report.findings ?? [];
+  const findings = (report.findings ?? []).filter(f => !["COVERAGE", "RALLY_LENGTH", "ACTIVITY_MIX"].includes(f.category) && f.state !== "INTERNAL");
 
   return (
     <section className="card report-panel">

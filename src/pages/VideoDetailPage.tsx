@@ -586,13 +586,7 @@ export default function VideoDetailPage() {
         {video.state === "PARTIAL_READY" && (
           <div className="banner banner-warn">
             部分分析不可用，以下结果可能不完整。
-            {status && status.limitations.length > 0 && (
-              <ul>
-                {status.limitations.map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
-            )}
+
           </div>
         )}
 
@@ -602,13 +596,7 @@ export default function VideoDetailPage() {
             {failureCode
               ? `：${failureCode}`
               : `（${VIDEO_STATE_LABELS[video.state] ?? video.state}）`}
-            {status && status.limitations.length > 0 && (
-              <ul>
-                {status.limitations.map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
-            )}
+
           </div>
         )}
 
@@ -636,13 +624,7 @@ export default function VideoDetailPage() {
             ) : (
               <p className="muted">状态加载中…</p>
             )}
-            {status && status.limitations.length > 0 && (
-              <ul className="limitations">
-                {status.limitations.map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
-            )}
+
           </section>
         )}
 

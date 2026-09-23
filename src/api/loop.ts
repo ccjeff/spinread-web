@@ -54,7 +54,7 @@ export const loopApi = {
   feedback: (r: Review, body: string, complete: boolean, interval?: {start_ms: number; end_ms: number}) => mutation<ReviewDetail>(`/review-requests/${r.id}/feedback`, {base_version: r.version, body, complete, ...interval}),
   cancelReview: (r: Review) => mutation<Review>(`/review-requests/${r.id}/cancel`, {base_version: r.version}),
 };
-export const METRICS = {active_fraction: "有效训练时间占比", confidence_coverage: "检测置信覆盖率", "rally_duration_ms.mean": "平均回合时长", "rally_duration_ms.max": "最长回合时长", "hits_per_rally.mean": "每回合击球数"};
+export const METRICS = {active_fraction: "有效训练时间占比", "rally_duration_ms.mean": "平均回合时长", "rally_duration_ms.max": "最长回合时长", "hits_per_rally.mean": "每回合击球数"};
 export const SOURCES: Record<string, string> = {SYSTEM: "系统建议 · 待讨论", USER: "球员制定", COACH: "教练制定"};
 export const REVIEW_STATUS: Record<string, string> = {OPEN: "待教练评审", CLAIMED: "评审中", DONE: "已完成", CANCELLED: "已取消"};
 export function comparisonReason(reason: string) {
