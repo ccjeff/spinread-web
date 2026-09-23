@@ -1034,3 +1034,6 @@ h3 {
 .quiz-container button:focus-visible,.quiz-container a:focus-visible { outline:2px solid #91b9ff; outline-offset:3px; }
 @media(max-width:900px) { .quiz-workspace,.quiz-practice-grid { grid-template-columns:1fr; }.quiz-candidates { order:2; } }
 @media(max-width:520px) { .quiz-edges { grid-template-columns:1fr; }.quiz-editor,.quiz-candidates,.quiz-answer { padding:14px; }.quiz-container .page-header { align-items:flex-start; flex-direction:column; } }
+
+.practice-context { border-bottom: 1px solid var(--border, #343b46); padding: 12px 0 20px; margin-bottom: 20px; }
+.practice-context .field { margin: 12px 0; }
