@@ -13,6 +13,8 @@ export default function TopBar() {
           SpinRead
         </Link>
         <div className="topbar-right">
+          <Link to="/training">训练计划</Link>
+          <Link to="/coaching">教练协作</Link>
           <Link to="/practice">接发球练习</Link>
           {user && <span className="topbar-user">{user.display_name || user.email}</span>}
           <button

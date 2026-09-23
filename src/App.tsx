@@ -6,6 +6,9 @@ import VideoListPage from "./pages/VideoListPage";
 import UploadPage from "./pages/UploadPage";
 import VideoDetailPage from "./pages/VideoDetailPage";
 
+import TrainingPage from "./pages/TrainingPage";
+import CoachingPage from "./pages/CoachingPage";
+import ReviewPage from "./pages/ReviewPage";
 import QuizManagePage from "./pages/QuizManagePage";
 import QuizPracticePage from "./pages/QuizPracticePage";
 
@@ -41,6 +44,9 @@ export default function App() {
           />
           <Route path="/videos/:id/quizzes" element={<RequireAuth><QuizManagePage /></RequireAuth>} />
           <Route path="/practice" element={<RequireAuth><QuizPracticePage /></RequireAuth>} />
+          <Route path="/training" element={<RequireAuth><TrainingPage /></RequireAuth>} />
+          <Route path="/coaching" element={<RequireAuth><CoachingPage /></RequireAuth>} />
+          <Route path="/reviews/:id" element={<RequireAuth><ReviewPage /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

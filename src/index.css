@@ -1046,3 +1046,21 @@ h3 {
 .delete-confirmation { color: inherit; background: #161b22; border: 1px solid #343b46; border-radius: 12px; padding: 24px; max-width: min(520px, calc(100vw - 40px)); }
 .delete-confirmation::backdrop { background: rgb(0 0 0 / 65%); }
 .delete-confirmation ul { max-height: 35vh; overflow-y: auto; overflow-wrap: anywhere; padding-left: 24px; }
+
+.loop-container { padding-bottom: 60px; }
+.loop-card { padding: 24px; margin: 24px 0; }
+.loop-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.loop-card .field { margin: 16px 0; }
+.loop-form { margin: 20px 0; padding: 20px; border: 1px solid #343b46; border-radius: 10px; }
+.loop-form > button { margin-top: 16px; }
+.context-editor { border: 1px solid #343b46; padding: 16px; margin: 16px 0; border-radius: 8px; }
+.context-editor summary { cursor: pointer; }
+.context-editor .field { margin: 12px 0; }
+.preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+.grant-row, .retest-result { padding: 16px 0; border-top: 1px solid #343b46; margin-top: 12px; }
+.grant-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.review-list { display: grid; gap: 12px; }
+.review-row { display: grid; gap: 8px; padding: 16px; border: 1px solid #343b46; border-radius: 8px; }
+.review-row span { color: var(--text-muted, #9ba4b3); }
+.topbar-right { flex-wrap: wrap; }
+@media (max-width: 700px) { .topbar-inner { align-items: flex-start; gap: 16px; } .topbar-right { justify-content: flex-end; gap: 10px; } .loop-card { padding: 16px; } .loop-form { padding: 12px; } }

@@ -1,13 +1,14 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { api, clearAuth, getToken, loadUser, saveAuth } from "../api/client";
-import type { User } from "../api/types";
+import { apiRequest, api, clearAuth, getToken, loadUser, saveAuth } from "../api/client";
+import type { User, LoginResponse } from "../api/types";
 
 interface AuthContextValue {
   token: string | null;
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  register: (email: string, password: string, displayName: string, role: "USER" | "COACH") => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -23,6 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
+  const register = useCallback(async (email: string, password: string, displayName: string, role: "USER" | "COACH") => {
+    const res = await apiRequest<LoginResponse>("/auth/register", {method: "POST", auth: false, body: {email, password, display_name: displayName, role}});
+    saveAuth(res.access_token, res.user); setToken(res.access_token); setUser(res.user);
+  }, []);
+
   const logout = useCallback(() => {
     clearAuth();
     setToken(null);
@@ -30,8 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ token, user, login, logout }),
-    [token, user, login, logout],
+    () => ({ token, user, login, logout, register }),
+    [token, user, login, logout, register],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

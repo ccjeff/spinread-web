@@ -1,4 +1,5 @@
 export interface User {
+  role: "USER" | "COACH" | "SUPPORT" | "ADMIN";
   id: string;
   email: string;
   display_name: string;

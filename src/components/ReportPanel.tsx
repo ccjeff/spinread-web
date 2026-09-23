@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { AnalysisReport, ReportFinding } from "../api/types";
 import { FINDING_CATEGORY_LABELS } from "../utils/labels";
 import { formatMs } from "../utils/format";
@@ -22,13 +23,14 @@ function metricsSource(structured: Record<string, unknown>): Record<string, unkn
 const MAX_EVIDENCE_CHIPS = 8;
 
 interface ReportPanelProps {
+  playerId?: string;
   report: AnalysisReport | null;
   unavailable: boolean;
   stale: boolean;
   onSeek: (seconds: number) => void;
 }
 
-export default function ReportPanel({ report, unavailable, stale, onSeek }: ReportPanelProps) {
+export default function ReportPanel({ report, unavailable, stale, onSeek, playerId }: ReportPanelProps) {
   if (!report) {
     return unavailable ? (
       <section className="card report-panel">
@@ -76,6 +78,7 @@ export default function ReportPanel({ report, unavailable, stale, onSeek }: Repo
         <h3>报告</h3>
         <span className="report-version">时间线 v{report.timeline_version}</span>
       </div>
+      <div className="video-list-toolbar"><Link to={`/training?video=${report.video_id}${playerId ? `&player=${playerId}` : ""}`}>从报告制定训练计划 →</Link>{!playerId && <Link to={`/coaching?video=${report.video_id}`}>请教练评审 →</Link>}</div>
       {stale && <div className="banner banner-warn">指标正在重算，稍后自动刷新…</div>}
       {cards.length > 0 && (
         <div className="metric-cards">
