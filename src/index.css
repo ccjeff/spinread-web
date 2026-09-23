@@ -1064,3 +1064,15 @@ h3 {
 .review-row span { color: var(--text-muted, #9ba4b3); }
 .topbar-right { flex-wrap: wrap; }
 @media (max-width: 700px) { .topbar-inner { align-items: flex-start; gap: 16px; } .topbar-right { justify-content: flex-end; gap: 10px; } .loop-card { padding: 16px; } .loop-form { padding: 12px; } }
+
+.coach-dashboard { max-width: 1200px; }
+.coach-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+.coach-stats .card { padding: 20px; display: grid; gap: 8px; }
+.coach-stats strong { font-size: 2rem; }
+.coach-columns { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; align-items: start; }
+.coach-main { min-width: 0; }
+.coach-player { display: grid; gap: 8px; width: 100%; text-align: left; color: inherit; background: transparent; border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 12px; cursor: pointer; }
+.coach-player span { font-size: .85rem; color: var(--text-muted, #9ba4b3); }
+.coach-player.selected { border-color: #65d6ad; background: rgba(101,214,173,.08); }
+.coach-main .review-row { margin-bottom: 12px; }
+@media (max-width: 760px) { .coach-columns { grid-template-columns: 1fr; } .coach-stats { grid-template-columns: repeat(2, 1fr); } }

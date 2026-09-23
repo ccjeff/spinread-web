@@ -6,6 +6,12 @@ import VideoListPage from "./pages/VideoListPage";
 import UploadPage from "./pages/UploadPage";
 import VideoDetailPage from "./pages/VideoDetailPage";
 
+import { useAuth } from "./auth/AuthContext";
+import CoachDashboardPage from "./pages/CoachDashboardPage";
+import CoachVideoPage from "./pages/CoachVideoPage";
+
+function HomePage() { const {user} = useAuth(); return user?.role === "COACH" ? <Navigate to="/coach" replace/> : <VideoListPage/>; }
+
 import TrainingPage from "./pages/TrainingPage";
 import CoachingPage from "./pages/CoachingPage";
 import ReviewPage from "./pages/ReviewPage";
@@ -22,7 +28,7 @@ export default function App() {
             path="/"
             element={
               <RequireAuth>
-                <VideoListPage />
+                <HomePage />
               </RequireAuth>
             }
           />
@@ -44,6 +50,9 @@ export default function App() {
           />
           <Route path="/videos/:id/quizzes" element={<RequireAuth><QuizManagePage /></RequireAuth>} />
           <Route path="/practice" element={<RequireAuth><QuizPracticePage /></RequireAuth>} />
+          <Route path="/coach" element={<RequireAuth><CoachDashboardPage /></RequireAuth>} />
+          <Route path="/coach/videos/:id" element={<RequireAuth><CoachVideoPage /></RequireAuth>} />
+          <Route path="/library" element={<RequireAuth><VideoListPage /></RequireAuth>} />
           <Route path="/training" element={<RequireAuth><TrainingPage /></RequireAuth>} />
           <Route path="/coaching" element={<RequireAuth><CoachingPage /></RequireAuth>} />
           <Route path="/reviews/:id" element={<RequireAuth><ReviewPage /></RequireAuth>} />

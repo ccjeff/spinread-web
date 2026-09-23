@@ -21,7 +21,17 @@ export interface CoachGrant {id: string; player_id: string; player_name: string;
 export interface Consent {id: string; video_id: string; granted_to: string; purpose: string; state: string; version: number}
 export interface Review {id: string; video_id: string; filename: string; player_id: string; player_name: string; coach_id: string; coach_name: string; status: string; version: number; timeline_version: number; question: string; stale: boolean; created_at: string}
 export interface ReviewDetail extends Review {feedback: {id: string; body: string; start_ms: number | null; end_ms: number | null; provenance: {source: string; source_id: string}; created_at: string}[]; practice_notes: {start_ms: number; answer: {note: string; spin: string; length: string; receive: string}; confidence: number; created_at: string}[]}
+export interface CoachDashboard {
+  summary: {players: number; pending_reviews: number; active_tasks: number; retests: number};
+  reviews: Review[];
+  players: {id: string; name: string; pending_reviews: number; progress: Record<string, number>;
+    videos: {id: string; filename: string; state: string; created_at: string}[];
+    tasks: {id: string; title: string; status: string; player_note: string; updated_at: string; video_id: string}[];
+    retests: {id: string; task_id: string; created_at: string; comparable: boolean; success: boolean | null}[];
+  }[];
+}
 export const loopApi = {
+  dashboard: (coachId: string) => apiRequest<CoachDashboard>(`/coaches/${coachId}/dashboard`),
   me: () => apiRequest<User>("/auth/me"),
   context: (id: string) => apiRequest<ContextData>(`/videos/${id}/context`),
   saveContext: (id: string, version: number, context: Context) => mutation<ContextData>(`/videos/${id}/context`, {base_version: version, ...context}, "PATCH"),

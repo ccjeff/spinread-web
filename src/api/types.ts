@@ -70,6 +70,7 @@ export interface VideoSummary {
 }
 
 export interface VideoDetail extends VideoSummary {
+  owner_id: string;
   target_player: { mode: TargetPlayerMode };
   recorded_at: string | null;
   probe: Record<string, unknown> | null;

@@ -13,6 +13,7 @@ export default function TopBar() {
           SpinRead
         </Link>
         <div className="topbar-right">
+          {user?.role === "COACH" && <><Link to="/coach">教练工作台</Link><Link to="/library">我的视频</Link></>}
           <Link to="/training">训练计划</Link>
           <Link to="/coaching">教练协作</Link>
           <Link to="/practice">接发球练习</Link>
