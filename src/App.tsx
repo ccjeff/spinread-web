@@ -6,6 +6,9 @@ import VideoListPage from "./pages/VideoListPage";
 import UploadPage from "./pages/UploadPage";
 import VideoDetailPage from "./pages/VideoDetailPage";
 
+import QuizManagePage from "./pages/QuizManagePage";
+import QuizPracticePage from "./pages/QuizPracticePage";
+
 export default function App() {
   return (
     <AuthProvider>
@@ -36,6 +39,8 @@ export default function App() {
               </RequireAuth>
             }
           />
+          <Route path="/videos/:id/quizzes" element={<RequireAuth><QuizManagePage /></RequireAuth>} />
+          <Route path="/practice" element={<RequireAuth><QuizPracticePage /></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

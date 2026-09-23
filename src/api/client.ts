@@ -89,11 +89,12 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   auth?: boolean;
+  headers?: Record<string, string>;
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const auth = options.auth !== false;
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {...options.headers};
   if (auth) {
     const token = getToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;

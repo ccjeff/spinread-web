@@ -562,6 +562,7 @@ export default function VideoDetailPage() {
             </div>
           </div>
           <div className="page-header-actions">
+            {ready && <button className="btn btn-primary" onClick={() => navigate(`/videos/${id}/quizzes`)}>发球练习</button>}
             {ready && (
               <button
                 type="button"
