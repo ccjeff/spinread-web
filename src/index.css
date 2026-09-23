@@ -1037,3 +1037,12 @@ h3 {
 
 .practice-context { border-bottom: 1px solid var(--border, #343b46); padding: 12px 0 20px; margin-bottom: 20px; }
 .practice-context .field { margin: 12px 0; }
+
+.video-list-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.bulk-toolbar { padding: 16px; margin-bottom: 20px; border: 1px solid var(--border, #343b46); border-radius: 10px; }
+.video-select { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; cursor: pointer; }
+.video-card-selected { outline: 2px solid #4c87ff; outline-offset: -2px; }
+
+.delete-confirmation { color: inherit; background: #161b22; border: 1px solid #343b46; border-radius: 12px; padding: 24px; max-width: min(520px, calc(100vw - 40px)); }
+.delete-confirmation::backdrop { background: rgb(0 0 0 / 65%); }
+.delete-confirmation ul { max-height: 35vh; overflow-y: auto; overflow-wrap: anywhere; padding-left: 24px; }

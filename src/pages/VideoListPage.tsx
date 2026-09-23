@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
@@ -15,11 +15,20 @@ export default function VideoListPage() {
   const [videos, setVideos] = useState<VideoSummary[] | null>(null);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const confirmation = useRef<HTMLDialogElement>(null);
+  const [pendingDelete, setPendingDelete] = useState<VideoSummary[] | null>(null);
+  const [managing, setManaging] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [notice, setNotice] = useState("");
+  const selectedVideos = videos?.filter(v => selected.has(v.id)) ?? [];
 
   const refresh = useCallback(async () => {
     try {
       const list = await api.listVideos();
       setVideos(list);
+      setSelected(previous => new Set([...previous].filter(id => list.some(v => v.id === id))));
       setError(null);
       const processing = list.filter((v) => isProcessingState(v.state));
       const entries = await Promise.all(
@@ -48,28 +57,77 @@ export default function VideoListPage() {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  async function onDelete(e: MouseEvent, video: VideoSummary) {
+  useEffect(() => {
+    if (pendingDelete) confirmation.current?.showModal();
+    else confirmation.current?.close();
+  }, [pendingDelete]);
+
+  function onDelete(e: MouseEvent, video: VideoSummary) {
     e.stopPropagation();
-    if (!window.confirm(`确定删除视频「${video.filename}」吗？`)) return;
-    try {
-      await api.deleteVideo(video.id);
-      void refresh();
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : "删除失败");
+    setPendingDelete([video]);
+  }
+
+  function toggle(id: string) {
+    if (deleting) return;
+    setSelected(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function deleteVideos(targets: VideoSummary[]) {
+    if (deleting || targets.length === 0) return;
+    setDeleting(true); setDeleteError(""); setNotice("");
+    const succeeded = new Set<string>();
+    const failures: string[] = [];
+    // Bound concurrency; each request retains the existing owner checks.
+    for (let offset = 0; offset < targets.length; offset += 5) {
+      const batch = targets.slice(offset, offset + 5);
+      const results = await Promise.allSettled(batch.map(v => api.deleteVideo(v.id)));
+      results.forEach((result, i) => {
+        if (result.status === "fulfilled") succeeded.add(batch[i].id);
+        else failures.push(`${batch[i].filename}：${result.reason instanceof Error ? result.reason.message : "删除失败"}`);
+      });
     }
+    setVideos(previous => previous?.filter(v => !succeeded.has(v.id)) ?? null);
+    setSelected(previous => new Set([...previous].filter(id => !succeeded.has(id))));
+    setNotice(`已删除 ${succeeded.size} 个视频。`);
+    if (failures.length) setDeleteError(`${failures.length} 个视频未删除，可重试。${failures.slice(0, 3).join("；")}`);
+    setDeleting(false);
+    await refresh();
   }
 
   return (
     <div className="page">
       <TopBar />
+      <dialog className="delete-confirmation" ref={confirmation} aria-labelledby="delete-title" onCancel={() => setPendingDelete(null)}>
+        <h2 id="delete-title">删除 {pendingDelete?.length ?? 0} 个视频？</h2>
+        <p>删除后，这些视频及其练习将不再可访问。</p>
+        <ul>{pendingDelete?.map(v => <li key={v.id}>{v.filename}</li>)}</ul>
+        <div className="video-list-toolbar">
+          <button className="btn btn-ghost" autoFocus onClick={() => setPendingDelete(null)}>取消</button>
+          <button className="btn btn-danger" onClick={() => {const targets = pendingDelete; setPendingDelete(null); if (targets) void deleteVideos(targets);}}>确认删除</button>
+        </div>
+      </dialog>
       <main className="container">
         <div className="page-header">
           <h2>我的视频</h2>
-          <button type="button" className="btn btn-primary" onClick={() => navigate("/upload")}>
+          <div className="video-list-toolbar"><button type="button" className="btn btn-ghost" disabled={deleting || !videos?.length} onClick={() => {setManaging(!managing); setSelected(new Set());}}>
+            {managing ? "完成管理" : "批量管理"}
+          </button><button type="button" className="btn btn-primary" disabled={deleting} onClick={() => navigate("/upload")}>
             上传视频
-          </button>
+          </button></div>
         </div>
         {error && <div className="banner banner-error">{error}</div>}
+        {deleteError && <div role="alert" className="banner banner-error">{deleteError}</div>}
+        {notice && <p role="status">{notice}</p>}
+        {managing && <div className="video-list-toolbar bulk-toolbar" aria-label="批量管理工具栏">
+          <label><input type="checkbox" disabled={deleting || !videos?.length} checked={!!videos?.length && selectedVideos.length === videos.length} onChange={e => setSelected(new Set(e.target.checked ? videos?.map(v => v.id) : []))}/> 全选当前列表</label>
+          <span>已选 {selectedVideos.length} / {videos?.length ?? 0}</span>
+          <button className="btn btn-ghost" disabled={deleting || selectedVideos.length === 0} onClick={() => setSelected(new Set())}>取消选择</button>
+          <button className="btn btn-danger" disabled={deleting || selectedVideos.length === 0} onClick={() => setPendingDelete(selectedVideos)}>{deleting ? "正在删除…" : `删除所选 (${selectedVideos.length})`}</button>
+        </div>}
         {videos === null ? (
           <p className="muted">加载中…</p>
         ) : videos.length === 0 ? (
@@ -82,9 +140,10 @@ export default function VideoListPage() {
               return (
                 <div
                   key={v.id}
-                  className="card video-card"
-                  onClick={() => navigate(`/videos/${v.id}`)}
+                  className={`card video-card ${managing && selected.has(v.id) ? "video-card-selected" : ""}`}
+                  onClick={() => {if (!deleting) {if (managing) toggle(v.id); else navigate(`/videos/${v.id}`);}}}
                 >
+                  {managing && <label className="video-select" onClick={e => e.stopPropagation()}><input type="checkbox" disabled={deleting} checked={selected.has(v.id)} onChange={() => toggle(v.id)} aria-label={`选择 ${v.filename}`}/> 选择视频</label>}
                   <div className="video-card-top">
                     <span className="video-name" title={v.filename}>
                       {v.filename}
@@ -102,15 +161,16 @@ export default function VideoListPage() {
                       label={pct !== undefined ? `${Math.round(pct)}%` : "排队中"}
                     />
                   )}
-                  <div className="video-actions">
+                  {!managing && <div className="video-actions">
                     <button
                       type="button"
                       className="btn btn-ghost btn-danger"
+                      disabled={deleting}
                       onClick={(e) => void onDelete(e, v)}
                     >
                       删除
                     </button>
-                  </div>
+                  </div>}
                 </div>
               );
             })}
