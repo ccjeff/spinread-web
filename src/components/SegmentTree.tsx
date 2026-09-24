@@ -173,7 +173,7 @@ export default function SegmentTree({
                       {formatMs(d.start_ms)}–{formatMs(d.end_ms)}
                     </span>
                     <span className="segment-duration">{formatMs(duration)}</span>
-                    <span className="segment-confidence">{confidencePct(seg.confidence)}%</span>
+                    {seg.confidence != null && <span className="segment-confidence">{confidencePct(seg.confidence)}%</span>}
                     <span className="segment-export">
                       <ExportButton
                         entry={clipByItemId[seg.item_id] ?? null}
@@ -231,7 +231,7 @@ export default function SegmentTree({
                               <span className="segment-hits">
                                 {hits !== null ? `${rally.attributes["hit_count_estimated"] ? "约 " : ""}${hits} 次击球` : "—"}
                               </span>
-                              <span className="segment-confidence">{confidencePct(rally.confidence)}%</span>
+                              {rally.confidence != null && <span className="segment-confidence">{confidencePct(rally.confidence)}%</span>}
                               <span className="segment-export">
                                 <ExportButton
                                   entry={clipByItemId[rally.item_id] ?? null}

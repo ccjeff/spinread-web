@@ -127,7 +127,7 @@ export interface TimelineItem {
   end_ms: number;
   parent_id: string | null;
   actor: string | null;
-  confidence: number;
+  confidence: number | null;
   provenance: Record<string, unknown>;
   attributes: Record<string, unknown>;
 }
