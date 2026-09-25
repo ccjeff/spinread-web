@@ -59,7 +59,7 @@ function displayOf(item: TimelineItem, pending: PendingEdit | undefined): Displa
 
 const RALLY_PREVIEW_COUNT = 5;
 
-interface SegmentTreeProps {
+export interface SegmentTreeProps {
   items: TimelineItem[];
   activeItemId: string | null;
   editMode: boolean;

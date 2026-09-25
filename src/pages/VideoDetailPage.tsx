@@ -16,10 +16,12 @@ import StatusBadge from "../components/StatusBadge";
 import ProgressBar from "../components/ProgressBar";
 import Player from "../components/Player";
 import type { PlayerHandle } from "../components/Player";
-import SegmentTree from "../components/SegmentTree";
+import EventPanel from "../components/EventPanel";
+import SessionTimeline from "../components/SessionTimeline";
+import { buildTrainingNavigation } from "../utils/trainingTimeline";
+import type { TrainingChapter } from "../utils/trainingTimeline";
 import type { PendingEdit } from "../components/EditControls";
 import ReportPanel from "../components/ReportPanel";
-import Filmstrip from "../components/Filmstrip";
 import { useExports } from "../hooks/useExports";
 import type { ExportEntry } from "../hooks/useExports";
 import { formatDateTime, formatMs } from "../utils/format";
@@ -109,6 +111,10 @@ export default function VideoDetailPage() {
   const [reportUnavailable, setReportUnavailable] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [currentMs, setCurrentMs] = useState(0);
+  const [chapterId, setChapterId] = useState("all");
+  const [navigationRequest, setNavigationRequest] = useState(0);
+  const navigation = useMemo(() => buildTrainingNavigation(timeline?.items ?? []), [timeline]);
   const [editMode, setEditMode] = useState(false);
   const [pending, setPending] = useState<Record<string, PendingEdit>>({});
   const [saving, setSaving] = useState(false);
@@ -147,6 +153,8 @@ export default function VideoDetailPage() {
     setReportUnavailable(false);
     setLoadError(null);
     setActiveItemId(null);
+    setCurrentMs(0);
+    setChapterId("all");
     setEditMode(false);
     setPending({});
     setSelected(new Set());
@@ -300,6 +308,7 @@ export default function VideoDetailPage() {
     const startSec = Math.max(0, item.start_ms - PRE_ROLL_MS) / 1000;
     rangeEndRef.current = (item.end_ms + POST_ROLL_MS) / 1000;
     setActiveItemId(item.item_id);
+    setCurrentMs(startSec * 1000);
     playerRef.current?.seekTo(startSec);
     playerRef.current?.play();
   }, []);
@@ -311,6 +320,7 @@ export default function VideoDetailPage() {
   }, []);
 
   const handleTimeUpdate = useCallback((seconds: number) => {
+    setCurrentMs(Math.round(seconds * 1000));
     if (rangeEndRef.current !== null && seconds >= rangeEndRef.current) {
       rangeEndRef.current = null;
       setActiveItemId(null);
@@ -319,16 +329,26 @@ export default function VideoDetailPage() {
   }, []);
 
   const handleSeek = useCallback((seconds: number) => {
+    setCurrentMs(Math.round(seconds * 1000));
     rangeEndRef.current = null;
     setActiveItemId(null);
     playerRef.current?.seekTo(seconds);
   }, []);
+
+  const selectChapter = useCallback((chapter: TrainingChapter) => {
+    setChapterId(chapter.id);
+    setNavigationRequest(value => value + 1);
+    playSegment(chapter.entries[0].item);
+  }, [playSegment]);
 
   const refreshTimeline = useCallback(async () => {
     if (!id) return;
     try {
       const tl = await api.getActiveTimeline(id);
       setTimeline(tl);
+      setChapterId("all");
+      setActiveItemId(null);
+      rangeEndRef.current = null;
       setTimelineUnavailable(false);
     } catch {
       setTimelineUnavailable(true);
@@ -517,7 +537,7 @@ export default function VideoDetailPage() {
     return (
       <div className="page">
         <TopBar />
-        <main className="container">
+        <main className="container video-detail-container">
           <div className="banner banner-error">{loadError}</div>
           <button type="button" className="btn btn-ghost" onClick={() => navigate("/")}>
             返回列表
@@ -531,7 +551,7 @@ export default function VideoDetailPage() {
     return (
       <div className="page">
         <TopBar />
-        <main className="container">
+        <main className="container video-detail-container">
           <p className="muted">加载中…</p>
         </main>
       </div>
@@ -546,7 +566,7 @@ export default function VideoDetailPage() {
   return (
     <div className="page">
       <TopBar />
-      <main className="container">
+      <main className="container video-detail-container">
         <div className="page-header">
           <div className="page-header-main">
             <h2 className="video-title">{video.filename}</h2>
@@ -630,40 +650,46 @@ export default function VideoDetailPage() {
 
         {ready && (
           <>
-            <Player ref={playerRef} videoId={video.id} onTimeUpdate={handleTimeUpdate} />
-            {durationMs > 0 && (
-              <Filmstrip videoId={video.id} durationMs={durationMs} onSeek={handleSeek} />
-            )}
-            <ReportPanel
-              report={report}
-              unavailable={reportUnavailable}
-              stale={reportStale}
-              onSeek={handleSeek}
-            />
-            {timelineUnavailable && !timeline && (
-              <div className="banner banner-warn">时间线尚未生成，暂无法展示片段列表。</div>
-            )}
-            <SegmentTree
-              items={timeline?.items ?? []}
-              activeItemId={activeItemId}
-              editMode={editMode}
-              pending={pending}
-              clipByItemId={clipByItemId}
-              selected={selected}
-              highlight={highlight}
-              onPlayItem={playSegment}
-              onPlayAll={playAll}
-              onNudge={onNudge}
-              onTypeChange={onTypeChange}
-              onSplit={onSplit}
-              onMergeNext={onMergeNext}
-              onDelete={onDelete}
-              onExport={requestClip}
-              onDownload={onDownload}
-              onToggleSelect={onToggleSelect}
-              onCreateHighlight={onCreateHighlight}
-              onDownloadHighlight={onDownloadHighlight}
-            />
+            <div className="review-workspace">
+              <div className="review-viewer">
+                <Player ref={playerRef} videoId={video.id} onTimeUpdate={handleTimeUpdate} />
+                <SessionTimeline chapters={navigation.chapters} entries={navigation.entries}
+                  durationMs={durationMs} currentMs={currentMs} chapterId={chapterId}
+                  activeItemId={activeItemId} onPlayAll={playAll}
+                  onChapter={selectChapter} onSeek={handleSeek}
+                  onPlay={entry => {setChapterId("all"); setNavigationRequest(value => value + 1); playSegment(entry.item);}} />
+                {timelineUnavailable && !timeline && <div className="banner banner-warn">时间线尚未生成，暂无法展示关键节点。</div>}
+              </div>
+              <div className="review-events">
+                <EventPanel key={`${timeline?.timeline_id ?? video.id}:${navigationRequest}`}
+                  entries={navigation.entries} chapters={navigation.chapters}
+                  chapterId={chapterId} currentMs={currentMs} onChapterFilter={setChapterId}
+                  items={timeline?.items ?? []}
+                  activeItemId={activeItemId}
+                  editMode={editMode}
+                  pending={pending}
+                  clipByItemId={clipByItemId}
+                  selected={selected}
+                  highlight={highlight}
+                  onPlayItem={playSegment}
+                  onPlayAll={playAll}
+                  onNudge={onNudge}
+                  onTypeChange={onTypeChange}
+                  onSplit={onSplit}
+                  onMergeNext={onMergeNext}
+                  onDelete={onDelete}
+                  onExport={requestClip}
+                  onDownload={onDownload}
+                  onToggleSelect={onToggleSelect}
+                  onCreateHighlight={onCreateHighlight}
+                  onDownloadHighlight={onDownloadHighlight}
+                />
+              </div>
+            </div>
+            <details className="session-report">
+              <summary>训练报告与教练协作 <span>时间线 v{timelineVersion}</span></summary>
+              <ReportPanel report={report} unavailable={reportUnavailable} stale={reportStale} onSeek={handleSeek} />
+            </details>
             {editMode && (
               <div className="edit-bar">
                 <span className="edit-bar-hint">
