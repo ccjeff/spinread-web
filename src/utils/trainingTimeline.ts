@@ -1,9 +1,12 @@
+import type { TrainingAnnotation } from "../api/annotations";
 import type { TimelineItem } from "../api/types";
 
 export const TRAINING_TYPES = {
   FIXED_POINT: { label: "定点", color: "#67d7b0" },
   MULTIBALL: { label: "多球", color: "#b49aff" },
   SERVE_RECEIVE: { label: "发接发", color: "#f4bd70" },
+  RALLY: { label: "对练", color: "#77b8ed" },
+  OTHER: { label: "其他", color: "#c3a28d" },
   UNCLASSIFIED: { label: "未分类", color: "#8fa9c6" },
 } as const;
 export type TrainingType = keyof typeof TRAINING_TYPES;
@@ -12,6 +15,7 @@ export interface TrainingEntry {
   kind: "training" | "gap";
   trainingType: TrainingType;
   ordinal: number;
+  trainingTitle?: string;
   chapterId: string | null;
 }
 export interface TrainingChapter {
@@ -21,6 +25,7 @@ export interface TrainingChapter {
   end_ms: number;
   trainingType: TrainingType;
   entries: TrainingEntry[];
+  annotation?: TrainingAnnotation;
 }
 
 function trainingType(item: TimelineItem, parent?: TimelineItem): TrainingType {
@@ -31,7 +36,7 @@ function trainingType(item: TimelineItem, parent?: TimelineItem): TrainingType {
     ? value as TrainingType : "UNCLASSIFIED";
 }
 
-export function buildTrainingNavigation(items: TimelineItem[]) {
+export function buildTrainingNavigation(items: TimelineItem[], annotations: TrainingAnnotation[] = []) {
   const byId = new Map(items.map(item => [item.item_id, item]));
   const rallyParents = new Set(items.filter(item => item.type === "RALLY").map(item => item.parent_id));
   let ordinal = 0;
@@ -58,7 +63,44 @@ export function buildTrainingNavigation(items: TimelineItem[]) {
     chapter.entries.push(entry);
     entry.chapterId = chapter.id;
   }
-  return { entries, chapters };
+  if (!annotations.length) return { entries, chapters };
+  // Human chapters are video-time ranges and survive regenerated rally IDs.
+  const ordered = [...annotations].sort((a, b) => a.start_ms - b.start_ms);
+  const merged: TrainingChapter[] = [];
+  for (const chapter of chapters) {
+    let cursor = chapter.start_ms;
+    for (const annotation of ordered) {
+      if (annotation.end_ms <= cursor || annotation.start_ms >= chapter.end_ms) continue;
+      if (annotation.start_ms > cursor) merged.push({...chapter, id: `${chapter.id}:${cursor}`, start_ms: cursor, end_ms: annotation.start_ms, entries: []});
+      cursor = Math.max(cursor, annotation.end_ms);
+    }
+    if (cursor < chapter.end_ms) merged.push({...chapter, id: `${chapter.id}:${cursor}`, start_ms: cursor, entries: []});
+  }
+  for (const annotation of ordered) {
+    const type: TrainingType = annotation.feeding === "MULTIBALL" ? "MULTIBALL"
+      : annotation.feeding === "SERVE_RECEIVE" ? "SERVE_RECEIVE"
+      : annotation.movement === "FIXED" ? "FIXED_POINT" : annotation.feeding === "RALLY" ? "RALLY" : "OTHER";
+    merged.push({id: annotation.id, number: 0, start_ms: annotation.start_ms, end_ms: annotation.end_ms,
+      trainingType: type, entries: [], annotation});
+  }
+  merged.sort((a, b) => a.start_ms - b.start_ms);
+  merged.forEach((chapter, index) => {chapter.number = index + 1;});
+  for (const entry of entries) {
+    if (entry.kind !== "training") continue;
+    // A boundary may cross a rally: show it once in the chapter with most overlap.
+    let destination: TrainingChapter | undefined;
+    let best = 0;
+    for (const chapter of merged) {
+      const overlap = Math.min(entry.item.end_ms, chapter.end_ms) - Math.max(entry.item.start_ms, chapter.start_ms);
+      if (overlap > best || overlap === best && overlap > 0 && chapter.annotation) {best = overlap; destination = chapter;}
+    }
+    entry.chapterId = destination?.id ?? null;
+    if (destination) {
+      destination.entries.push(entry);
+      if (destination.annotation) {entry.trainingType = destination.trainingType; entry.trainingTitle = destination.annotation.title;}
+    }
+  }
+  return {entries, chapters: merged};
 }
 
 export function entryTitle(entry: TrainingEntry) {

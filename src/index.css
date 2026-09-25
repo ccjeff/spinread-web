@@ -1135,3 +1135,34 @@ h3 {
   .review-events { height: 520px; }
   .timeline-navigation { gap: 8px; }
 }
+/* Human-authored training chapters. */
+.annotation-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.annotation-toolbar [aria-pressed=true] { background: #294a6b; border-color: #98c4ef; }
+.chapter-track.is-selecting { cursor: crosshair; touch-action: none; user-select: none; }
+.chapter-track.is-selecting .chapter-block { pointer-events: none; }
+.annotation-selection { position: absolute; top: -3px; bottom: -3px; z-index: 3; background: #90c6ff65; border: 2px solid #d2e8ff; pointer-events: none; }
+.annotation-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 10px 0; font-size: 12px; }
+.annotation-summary span { color: var(--text-dim); }
+.annotation-help { color: var(--text-dim); font-size: 12px; margin: 8px 0 14px; }
+.annotation-editor form, .annotation-editor fieldset { min-width: 0; }
+.annotation-editor fieldset { border: 0; padding: 0; margin: 0; }
+.annotation-editor label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; margin: 12px 0; color: var(--text-dim); min-width: 0; }
+.annotation-editor input, .annotation-editor select, .annotation-editor textarea { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input); color: var(--text); font: inherit; }
+.annotation-range-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.annotation-range-fields label { margin: 7px 0; }
+.annotation-section-title, .annotation-action-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+.annotation-section-title { margin: 18px 0 10px; }
+.annotation-section-title span { color: var(--text-dim); font-size: 11px; }
+.annotation-action { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 8px 0; }
+.annotation-action-heading .btn { padding: 3px 8px; }
+.annotation-save-area { padding: 12px 14px; border-top: 1px solid var(--border); }
+.annotation-save-area > .btn { width: 100%; }
+.annotation-error { color: #ffaaaa; font-size: 12px; margin: 8px 0; }
+.annotation-notice { color: #f4cb90; font-size: 12px; }
+.annotation-remove { color: #ffbbbb; font-size: 11px; }
+.event-card-footer .training-type-tag { max-width: 125px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chapter-block span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 3px; }
+
+@media (min-width: 881px) {
+  .review-events .event-panel { position: sticky; top: 76px; inset-inline: auto; bottom: auto; height: calc(100dvh - 100px); max-height: 860px; min-height: 460px; }
+}

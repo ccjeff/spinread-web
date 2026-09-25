@@ -56,7 +56,7 @@ export default function EventPanel(props: Props) {
       <div className="event-filters">
         <div className="event-tabs" aria-label="事件范围"><button aria-pressed={kind === "training"} onClick={() => setKind("training")}>训练回合 <span>{entries.filter(entry => entry.kind === "training").length}</span></button>
           <button aria-pressed={kind === "all"} onClick={() => setKind("all")}>全部节点</button></div>
-        <div className="event-selects"><label>训练段<select aria-label="筛选训练段" value={chapterId} onChange={e => onChapterFilter(e.target.value)}><option value="all">整场训练</option>{chapters.map(chapter => <option key={chapter.id} value={chapter.id}>{String(chapter.number).padStart(2, "0")} · {formatMs(chapter.start_ms)} · {chapter.entries.length} 回合</option>)}</select></label>
+        <div className="event-selects"><label>训练段<select aria-label="筛选训练段" value={chapterId} onChange={e => onChapterFilter(e.target.value)}><option value="all">整场训练</option>{chapters.map(chapter => <option key={chapter.id} value={chapter.id}>{String(chapter.number).padStart(2, "0")} · {formatMs(chapter.start_ms)} · {chapter.annotation ? chapter.annotation.title : `${chapter.entries.length} 回合`}</option>)}</select></label>
           <label>训练类型<select aria-label="筛选训练类型" value={type} onChange={e => setType(e.target.value as TrainingType | "all")}><option value="all">全部类型</option>{Object.entries(TRAINING_TYPES).map(([key, value]) => <option key={key} value={key}>{value.label}（{entries.filter(entry => entry.kind === "training" && entry.trainingType === key).length}）</option>)}</select></label></div>
       </div>
       <div className="event-list-status"><span>{visible.length} 个节点</span><span>点击回放 · 自动停在片段末尾</span></div>
@@ -76,7 +76,7 @@ export default function EventPanel(props: Props) {
               <span className="event-range">{formatMs(item.start_ms)}–{formatMs(item.end_ms)} <span>· {formatMs(item.end_ms - item.start_ms)}</span></span></span>
             <span className="event-play-icon" aria-hidden="true">▶</span>
           </button>
-          <div className="event-card-footer"><div>{entry.kind === "training" && <><span className="training-type-tag" style={{color: TRAINING_TYPES[entry.trainingType].color}}>{TRAINING_TYPES[entry.trainingType].label}</span>{hits !== null && <span className="event-hits">{item.attributes.hit_count_estimated ? "约 " : ""}{hits} 次击球</span>}</>}</div>
+          <div className="event-card-footer"><div>{entry.kind === "training" && <><span className="training-type-tag" style={{color: TRAINING_TYPES[entry.trainingType].color}}>{entry.trainingTitle ?? TRAINING_TYPES[entry.trainingType].label}</span>{hits !== null && <span className="event-hits">{item.attributes.hit_count_estimated ? "约 " : ""}{hits} 次击球</span>}</>}</div>
             <div>{item.type === "RALLY" && <input type="checkbox" aria-label={`选择回合 ${entry.ordinal} 加入集锦`} checked={selected.has(item.item_id)} onChange={() => onToggleSelect(item)}/>}
               <ExportButton entry={clipByItemId[item.item_id] ?? null} onExport={() => onExport(item)} onDownload={exported => onDownload(exported, item)}/></div>
           </div>

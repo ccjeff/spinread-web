@@ -1,3 +1,6 @@
+import TrainingAnnotationEditor from "../components/TrainingAnnotationEditor";
+import type {AnnotationDraft} from "../components/TrainingAnnotationEditor";
+import {useTrainingAnnotations} from "../hooks/useTrainingAnnotations";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
@@ -114,7 +117,7 @@ export default function VideoDetailPage() {
   const [currentMs, setCurrentMs] = useState(0);
   const [chapterId, setChapterId] = useState("all");
   const [navigationRequest, setNavigationRequest] = useState(0);
-  const navigation = useMemo(() => buildTrainingNavigation(timeline?.items ?? []), [timeline]);
+  const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [pending, setPending] = useState<Record<string, PendingEdit>>({});
   const [saving, setSaving] = useState(false);
@@ -127,6 +130,8 @@ export default function VideoDetailPage() {
   const toastTimer = useRef<number | null>(null);
 
   const ready = video !== null && isReadyState(video.state);
+  const annotations = useTrainingAnnotations(ready ? id : undefined);
+  const navigation = useMemo(() => buildTrainingNavigation(timeline?.items ?? [], annotations.document?.segments ?? []), [timeline, annotations.document]);
   const failure = video !== null && isFailureState(video.state);
   const processing = video !== null && isProcessingState(video.state);
 
@@ -154,6 +159,7 @@ export default function VideoDetailPage() {
     setLoadError(null);
     setActiveItemId(null);
     setCurrentMs(0);
+    setAnnotationDraft(null);
     setChapterId("all");
     setEditMode(false);
     setPending({});
@@ -338,8 +344,13 @@ export default function VideoDetailPage() {
   const selectChapter = useCallback((chapter: TrainingChapter) => {
     setChapterId(chapter.id);
     setNavigationRequest(value => value + 1);
-    playSegment(chapter.entries[0].item);
-  }, [playSegment]);
+    if (chapter.entries.length && !chapter.annotation) playSegment(chapter.entries[0].item);
+    else {
+      handleSeek(chapter.start_ms / 1000);
+      rangeEndRef.current = chapter.end_ms / 1000;
+      playerRef.current?.play();
+    }
+  }, [playSegment, handleSeek]);
 
   const refreshTimeline = useCallback(async () => {
     if (!id) return;
@@ -587,6 +598,7 @@ export default function VideoDetailPage() {
               <button
                 type="button"
                 className={`btn ${editMode ? "btn-primary" : "btn-ghost"}`}
+                disabled={!!annotationDraft}
                 onClick={toggleEditMode}
               >
                 {editMode ? "退出编辑" : "编辑时间线"}
@@ -655,13 +667,23 @@ export default function VideoDetailPage() {
                 <Player ref={playerRef} videoId={video.id} onTimeUpdate={handleTimeUpdate} />
                 <SessionTimeline chapters={navigation.chapters} entries={navigation.entries}
                   durationMs={durationMs} currentMs={currentMs} chapterId={chapterId}
+                  draftRange={annotationDraft}
+                  annotationEnabled={!!annotations.document && !editMode && !annotationDraft}
+                  onAnnotate={draft => {playerRef.current?.pause(); setAnnotationDraft(draft);}}
                   activeItemId={activeItemId} onPlayAll={playAll}
                   onChapter={selectChapter} onSeek={handleSeek}
                   onPlay={entry => {setChapterId("all"); setNavigationRequest(value => value + 1); playSegment(entry.item);}} />
+                {annotations.error && <div className="banner banner-warn">人工标注加载失败：{annotations.error} <button className="btn btn-ghost btn-sm" onClick={annotations.reload}>重试</button></div>}
                 {timelineUnavailable && !timeline && <div className="banner banner-warn">时间线尚未生成，暂无法展示关键节点。</div>}
               </div>
               <div className="review-events">
-                <EventPanel key={`${timeline?.timeline_id ?? video.id}:${navigationRequest}`}
+                {annotationDraft ? <TrainingAnnotationEditor
+                  onRangeChange={(start_ms, end_ms) => setAnnotationDraft(current => current ? {...current, start_ms, end_ms} : null)}
+                  draft={annotationDraft} segments={annotations.document?.segments ?? []}
+                  durationMs={durationMs} currentMs={currentMs} target={video.target_player.mode}
+                  onSeek={handleSeek} onClose={() => setAnnotationDraft(null)}
+                  onSave={async segments => {await annotations.save(segments); setChapterId("all"); showToast("ok", "训练标注已保存");}}/>
+                : <EventPanel key={`${timeline?.timeline_id ?? video.id}:${navigationRequest}`}
                   entries={navigation.entries} chapters={navigation.chapters}
                   chapterId={chapterId} currentMs={currentMs} onChapterFilter={setChapterId}
                   items={timeline?.items ?? []}
@@ -683,7 +705,7 @@ export default function VideoDetailPage() {
                   onToggleSelect={onToggleSelect}
                   onCreateHighlight={onCreateHighlight}
                   onDownloadHighlight={onDownloadHighlight}
-                />
+                />}
               </div>
             </div>
             <details className="session-report">
