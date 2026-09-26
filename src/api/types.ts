@@ -144,6 +144,7 @@ export type TimelineEditOperation =
   | { op: "SET_LABEL"; timeline_item_id: string; field: "type"; value: string }
   | { op: "SPLIT"; timeline_item_id: string; at_ms: number }
   | { op: "MERGE_NEXT"; timeline_item_id: string }
+  | { op: "MERGE_RALLIES"; timeline_item_ids: string[] }
   | { op: "DELETE"; timeline_item_id: string };
 
 export interface TimelineEditRequest {

@@ -1166,3 +1166,11 @@ h3 {
 @media (min-width: 881px) {
   .review-events .event-panel { position: sticky; top: 76px; inset-inline: auto; bottom: auto; height: calc(100dvh - 100px); max-height: 860px; min-height: 460px; }
 }
+
+.event-panel-footer { flex-wrap: wrap; }
+.event-panel-footer > small { flex-basis: 100%; color: var(--text-dim); }
+.merge-dialog-backdrop { margin: 14px 0; }
+.merge-dialog { padding: 20px; border: 1px solid var(--accent); }
+.practice-source-list { max-height: 340px; overflow-y: auto; margin: 12px 0; }
+.practice-source-row { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); padding: 8px 0; }
+.practice-source-row button { flex: 1; text-align: left; }

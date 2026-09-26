@@ -1,3 +1,4 @@
+import {rallySelection} from "../utils/rallySelection";
 import TrainingAnnotationEditor from "../components/TrainingAnnotationEditor";
 import type {AnnotationDraft} from "../components/TrainingAnnotationEditor";
 import {useTrainingAnnotations} from "../hooks/useTrainingAnnotations";
@@ -122,6 +123,8 @@ export default function VideoDetailPage() {
   const [pending, setPending] = useState<Record<string, PendingEdit>>({});
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [mergePreview, setMergePreview] = useState(false);
+  const selection = useMemo(() => rallySelection(timeline?.items ?? [], selected), [timeline, selected]);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const playerRef = useRef<PlayerHandle | null>(null);
   const rangeEndRef = useRef<number | null>(null);
@@ -361,6 +364,7 @@ export default function VideoDetailPage() {
       setActiveItemId(null);
       rangeEndRef.current = null;
       setTimelineUnavailable(false);
+      return tl;
     } catch {
       setTimelineUnavailable(true);
     }
@@ -490,6 +494,33 @@ export default function VideoDetailPage() {
       return next;
     });
   }, []);
+
+  async function mergeSelected() {
+    if (!id || !timeline || !selection.adjacent || selection.items.length < 2 || saving) return;
+    setSaving(true);
+    try {
+      await api.submitTimelineEdits(id, {base_timeline_version: timeline.version,
+        operations: [{op: "MERGE_RALLIES", timeline_item_ids: selection.items.map(item => item.item_id)}]});
+      setSelected(new Set()); setMergePreview(false);
+      const refreshed = await refreshTimeline();
+      const merged = refreshed?.items.find(item => item.type === "RALLY" && item.start_ms === selection.startMs && item.end_ms === selection.endMs);
+      if (merged) {
+        setSelected(new Set([merged.item_id])); setActiveItemId(merged.item_id);
+        if (navigation.chapters.some(chapter => chapter.id === chapterId && chapter.annotation)) setChapterId(chapterId);
+      }
+      showToast("ok", "已合并，准备时间已保留。可直接用于接发球练习。");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setSelected(new Set()); setMergePreview(false); await refreshTimeline();
+        showToast("err", "时间线已更新，请重新选择片段");
+      } else showToast("err", error instanceof Error ? error.message : "合并失败");
+    } finally {setSaving(false);}
+  }
+
+  function practiceSelected() {
+    if (!timeline || !selection.adjacent) return;
+    navigate(`/videos/${id}/quizzes?start=${selection.startMs}&end=${selection.endMs}&version=${timeline.version}`);
+  }
 
   const onCreateHighlight = useCallback(() => {
     const items = timeline?.items ?? [];
@@ -684,6 +715,9 @@ export default function VideoDetailPage() {
                   onSeek={handleSeek} onClose={() => setAnnotationDraft(null)}
                   onSave={async segments => {await annotations.save(segments); setChapterId("all"); showToast("ok", "训练标注已保存");}}/>
                 : <EventPanel key={`${timeline?.timeline_id ?? video.id}:${navigationRequest}`}
+                  onMergeSelected={() => setMergePreview(true)} onPracticeSelected={practiceSelected}
+                  selectionAdjacent={selection.adjacent} selectionBusy={saving}
+                  onClearSelection={() => setSelected(new Set())}
                   entries={navigation.entries} chapters={navigation.chapters}
                   chapterId={chapterId} currentMs={currentMs} onChapterFilter={setChapterId}
                   items={timeline?.items ?? []}
@@ -708,6 +742,15 @@ export default function VideoDetailPage() {
                 />}
               </div>
             </div>
+            {mergePreview && <div className="merge-dialog-backdrop"><section className="card merge-dialog" role="region" aria-label="确认合并相邻片段">
+              <h2>合并 {selection.items.length} 个相邻片段</h2>
+              <p>{formatMs(selection.startMs)}–{formatMs(selection.endMs)}，共 {formatMs(selection.endMs - selection.startMs)}。</p>
+              <p>保留片段之间的全部准备时间，保存为一个连续片段。原时间线版本保留；已有练习题将需要复核。</p>
+              <p className="muted">合并只修正片段边界，不会自动纠正其中误识别的击球。</p>
+              <div className="quiz-toolbar"><button className="btn btn-ghost" disabled={saving} onClick={() => {handleSeek(selection.startMs / 1000); rangeEndRef.current = selection.endMs / 1000; playerRef.current?.play();}}>预览完整区间</button>
+                <button className="btn btn-primary" disabled={saving || !selection.adjacent || selection.items.length < 2} onClick={() => void mergeSelected()}>{saving ? "正在合并…" : "确认合并"}</button>
+                <button className="btn btn-ghost" disabled={saving} onClick={() => setMergePreview(false)}>取消</button></div>
+            </section></div>}
             <details className="session-report">
               <summary>训练报告与教练协作 <span>时间线 v{timelineVersion}</span></summary>
               <ReportPanel report={report} unavailable={reportUnavailable} stale={reportStale} onSeek={handleSeek} />
