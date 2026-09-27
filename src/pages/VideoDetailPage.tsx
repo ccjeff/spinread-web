@@ -123,6 +123,10 @@ export default function VideoDetailPage() {
   const [pending, setPending] = useState<Record<string, PendingEdit>>({});
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [deleteDraft, setDeleteDraft] = useState<{title: string; items: TimelineItem[]; version: number} | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const deletePanelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {if (deleteDraft) deletePanelRef.current?.scrollIntoView({block: "nearest", behavior: "smooth"});}, [deleteDraft]);
   const [mergePreview, setMergePreview] = useState(false);
   const selection = useMemo(() => rallySelection(timeline?.items ?? [], selected), [timeline, selected]);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -163,6 +167,7 @@ export default function VideoDetailPage() {
     setActiveItemId(null);
     setCurrentMs(0);
     setAnnotationDraft(null);
+    setDeleteDraft(null); setDeleteError(""); setMergePreview(false);
     setChapterId("all");
     setEditMode(false);
     setPending({});
@@ -495,6 +500,30 @@ export default function VideoDetailPage() {
     });
   }, []);
 
+  function prepareDelete(title: string, items: TimelineItem[]) {
+    if (!timeline || saving || editMode || annotationDraft || !items.length) return;
+    playerRef.current?.pause(); rangeEndRef.current = null;
+    setMergePreview(false); setDeleteError("");
+    setDeleteDraft({title, items, version: timeline.version});
+  }
+
+  async function deleteSegments() {
+    if (!id || !deleteDraft || saving) return;
+    setSaving(true); setDeleteError("");
+    try {
+      await api.submitTimelineEdits(id, {base_timeline_version: deleteDraft.version,
+        operations: deleteDraft.items.map(item => ({op: "DELETE", timeline_item_id: item.item_id}))});
+      setSelected(new Set()); setActiveItemId(null); setDeleteDraft(null);
+      await refreshTimeline();
+      showToast("ok", "误标片段已删除，训练脉络已更新；原视频保留。");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setDeleteDraft(null); setSelected(new Set()); await refreshTimeline();
+        showToast("err", "时间线已更新，请重新选择要删除的片段");
+      } else setDeleteError(error instanceof Error ? error.message : "删除失败，请重试");
+    } finally {setSaving(false);}
+  }
+
   async function mergeSelected() {
     if (!id || !timeline || !selection.adjacent || selection.items.length < 2 || saving) return;
     setSaving(true);
@@ -699,7 +728,9 @@ export default function VideoDetailPage() {
                 <SessionTimeline chapters={navigation.chapters} entries={navigation.entries}
                   durationMs={durationMs} currentMs={currentMs} chapterId={chapterId}
                   draftRange={annotationDraft}
-                  annotationEnabled={!!annotations.document && !editMode && !annotationDraft}
+                  annotationEnabled={!!annotations.document && !editMode && !annotationDraft && !saving && !deleteDraft}
+                  deletingDisabled={saving || editMode || !!annotationDraft || !!deleteDraft}
+                  onDeleteChapter={chapter => prepareDelete(`训练段 ${chapter.number} · ${formatMs(chapter.start_ms)}–${formatMs(chapter.end_ms)}`, chapter.entries.map(entry => entry.item))}
                   onAnnotate={draft => {playerRef.current?.pause(); setAnnotationDraft(draft);}}
                   activeItemId={activeItemId} onPlayAll={playAll}
                   onChapter={selectChapter} onSeek={handleSeek}
@@ -715,8 +746,10 @@ export default function VideoDetailPage() {
                   onSeek={handleSeek} onClose={() => setAnnotationDraft(null)}
                   onSave={async segments => {await annotations.save(segments); setChapterId("all"); showToast("ok", "训练标注已保存");}}/>
                 : <EventPanel key={`${timeline?.timeline_id ?? video.id}:${navigationRequest}`}
+                  onRemoveItem={entry => prepareDelete(`回合 ${entry.ordinal} · ${formatMs(entry.item.start_ms)}–${formatMs(entry.item.end_ms)}`, [entry.item])}
+                  onRemoveSelected={() => prepareDelete(`所选 ${selection.items.length} 个回合`, selection.items)}
                   onMergeSelected={() => setMergePreview(true)} onPracticeSelected={practiceSelected}
-                  selectionAdjacent={selection.adjacent} selectionBusy={saving}
+                  selectionAdjacent={selection.adjacent} selectionBusy={saving || !!deleteDraft}
                   onClearSelection={() => setSelected(new Set())}
                   entries={navigation.entries} chapters={navigation.chapters}
                   chapterId={chapterId} currentMs={currentMs} onChapterFilter={setChapterId}
@@ -742,6 +775,15 @@ export default function VideoDetailPage() {
                 />}
               </div>
             </div>
+            {deleteDraft && <div ref={deletePanelRef} className="card delete-segment-panel" role="region" aria-label="确认删除误标片段">
+              <h2>删除 {deleteDraft.title}</h2>
+              <p>将删除以下 {deleteDraft.items.length} 个训练片段及其中的击球标记。原视频和历史时间线版本保留；已有练习题会进入待复核状态。</p>
+              <ul>{deleteDraft.items.map(item => <li key={item.item_id}>{formatMs(item.start_ms)}–{formatMs(item.end_ms)}</li>)}</ul>
+              <p className="muted">删除的是当前自动识别结果；人工填写的训练标签会保留。回合和自动训练段编号会重新排列。</p>
+              {deleteError && <p role="alert" className="banner banner-error">{deleteError}</p>}
+              <div className="quiz-toolbar"><button className="btn btn-danger" disabled={saving} onClick={() => void deleteSegments()}>{saving ? "正在删除…" : "确认删除片段"}</button>
+                <button className="btn btn-ghost" disabled={saving} onClick={() => setDeleteDraft(null)}>取消删除</button></div>
+            </div>}
             {mergePreview && <div className="merge-dialog-backdrop"><section className="card merge-dialog" role="region" aria-label="确认合并相邻片段">
               <h2>合并 {selection.items.length} 个相邻片段</h2>
               <p>{formatMs(selection.startMs)}–{formatMs(selection.endMs)}，共 {formatMs(selection.endMs - selection.startMs)}。</p>

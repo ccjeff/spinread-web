@@ -7,6 +7,8 @@ import type { TrainingChapter, TrainingEntry, TrainingType } from "../utils/trai
 import { formatMs } from "../utils/format";
 
 interface Props extends SegmentTreeProps {
+  onRemoveItem: (item: TrainingEntry) => void;
+  onRemoveSelected: () => void;
   onMergeSelected: () => void;
   onPracticeSelected: () => void;
   selectionAdjacent: boolean;
@@ -83,6 +85,7 @@ export default function EventPanel(props: Props) {
           </button>
           <div className="event-card-footer"><div>{entry.kind === "training" && <><span className="training-type-tag" style={{color: TRAINING_TYPES[entry.trainingType].color}}>{entry.trainingTitle ?? TRAINING_TYPES[entry.trainingType].label}</span>{hits !== null && <span className="event-hits">{item.attributes.hit_count_estimated ? "约 " : ""}{hits} 次击球</span>}</>}</div>
             <div>{item.type === "RALLY" && <input type="checkbox" aria-label={`选择回合 ${entry.ordinal}`} disabled={props.selectionBusy} checked={selected.has(item.item_id)} onChange={() => onToggleSelect(item)}/>}
+              {entry.kind === "training" && <button className="btn btn-ghost btn-xs btn-danger" aria-label={`删除回合 ${entry.ordinal}`} disabled={props.selectionBusy} onClick={() => props.onRemoveItem(entry)}>删除</button>}
               <ExportButton entry={clipByItemId[item.item_id] ?? null} onExport={() => onExport(item)} onDownload={exported => onDownload(exported, item)}/></div>
           </div>
         </div>;
@@ -90,6 +93,7 @@ export default function EventPanel(props: Props) {
     </div>
     {!editMode && <div className="event-panel-footer"><span>{selected.size > 0 ? `已选 ${selected.size} 个回合` : "勾选相邻回合，可合并或用于练习"}</span>
       {selected.size > 0 && <><button className="btn btn-ghost btn-sm" disabled={props.selectionBusy} onClick={props.onClearSelection}>清空选择</button>
+        <button className="btn btn-ghost btn-sm btn-danger" disabled={props.selectionBusy} onClick={props.onRemoveSelected}>删除所选回合</button>
         <button className="btn btn-primary btn-sm" disabled={props.selectionBusy || selected.size < 2 || !props.selectionAdjacent} onClick={props.onMergeSelected}>合并所选片段</button>
         <button className="btn btn-ghost btn-sm" disabled={props.selectionBusy || !props.selectionAdjacent} onClick={props.onPracticeSelected}>用于接发球练习</button>
         {!props.selectionAdjacent && <small>请选择时间线上连续相邻的回合（包括被筛选隐藏的回合）。</small>}</>}

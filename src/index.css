@@ -1174,3 +1174,6 @@ h3 {
 .practice-source-list { max-height: 340px; overflow-y: auto; margin: 12px 0; }
 .practice-source-row { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); padding: 8px 0; }
 .practice-source-row button { flex: 1; text-align: left; }
+
+.delete-segment-panel { margin: 16px 0; padding: 20px; border: 1px solid #b66b70; }
+.delete-segment-panel ul { max-height: 140px; overflow-y: auto; }
