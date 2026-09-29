@@ -21,6 +21,7 @@ import ProgressBar from "../components/ProgressBar";
 import Player from "../components/Player";
 import type { PlayerHandle } from "../components/Player";
 import EventPanel from "../components/EventPanel";
+import ChapterAnalysisPanel from "../components/ChapterAnalysisPanel";
 import SessionTimeline from "../components/SessionTimeline";
 import { buildTrainingNavigation } from "../utils/trainingTimeline";
 import type { TrainingChapter } from "../utils/trainingTimeline";
@@ -117,6 +118,7 @@ export default function VideoDetailPage() {
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [currentMs, setCurrentMs] = useState(0);
   const [chapterId, setChapterId] = useState("all");
+  const [analysisChapter, setAnalysisChapter] = useState<TrainingChapter | null>(null);
   const [navigationRequest, setNavigationRequest] = useState(0);
   const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -167,6 +169,7 @@ export default function VideoDetailPage() {
     setActiveItemId(null);
     setCurrentMs(0);
     setAnnotationDraft(null);
+    setAnalysisChapter(null);
     setDeleteDraft(null); setDeleteError(""); setMergePreview(false);
     setChapterId("all");
     setEditMode(false);
@@ -350,6 +353,7 @@ export default function VideoDetailPage() {
   }, []);
 
   const selectChapter = useCallback((chapter: TrainingChapter) => {
+    setAnalysisChapter(null);
     setChapterId(chapter.id);
     setNavigationRequest(value => value + 1);
     if (chapter.entries.length && !chapter.annotation) playSegment(chapter.entries[0].item);
@@ -730,6 +734,7 @@ export default function VideoDetailPage() {
                   draftRange={annotationDraft}
                   annotationEnabled={!!annotations.document && !editMode && !annotationDraft && !saving && !deleteDraft}
                   deletingDisabled={saving || editMode || !!annotationDraft || !!deleteDraft}
+                  onAnalyze={chapter => {playerRef.current?.pause(); setAnalysisChapter(chapter);}}
                   onDeleteChapter={chapter => prepareDelete(`训练段 ${chapter.number} · ${formatMs(chapter.start_ms)}–${formatMs(chapter.end_ms)}`, chapter.entries.map(entry => entry.item))}
                   onAnnotate={draft => {playerRef.current?.pause(); setAnnotationDraft(draft);}}
                   activeItemId={activeItemId} onPlayAll={playAll}
@@ -745,6 +750,11 @@ export default function VideoDetailPage() {
                   durationMs={durationMs} currentMs={currentMs} target={video.target_player.mode}
                   onSeek={handleSeek} onClose={() => setAnnotationDraft(null)}
                   onSave={async segments => {await annotations.save(segments); setChapterId("all"); showToast("ok", "训练标注已保存");}}/>
+                : analysisChapter && timeline ? <ChapterAnalysisPanel key={`${video.id}:${analysisChapter.id}:${analysisChapter.start_ms}:${analysisChapter.end_ms}`}
+                  videoId={video.id} chapter={analysisChapter} timelineVersion={timeline.version}
+                  annotationVersion={annotations.document?.version ?? 0} defaultTarget={video.target_player.mode}
+                  onClose={() => setAnalysisChapter(null)}
+                  onEvidence={(start, end) => {handleSeek(start / 1000); rangeEndRef.current = end / 1000; playerRef.current?.play();}}/>
                 : <EventPanel key={`${timeline?.timeline_id ?? video.id}:${navigationRequest}`}
                   onRemoveItem={entry => prepareDelete(`回合 ${entry.ordinal} · ${formatMs(entry.item.start_ms)}–${formatMs(entry.item.end_ms)}`, [entry.item])}
                   onRemoveSelected={() => prepareDelete(`所选 ${selection.items.length} 个回合`, selection.items)}

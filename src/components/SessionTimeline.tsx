@@ -15,6 +15,7 @@ interface Props {
   annotationEnabled: boolean;
   draftRange: AnnotationDraft | null;
   onAnnotate: (draft: AnnotationDraft) => void;
+  onAnalyze: (chapter: TrainingChapter) => void;
   onDeleteChapter: (chapter: TrainingChapter) => void;
   deletingDisabled: boolean;
   onPlayAll: () => void;
@@ -23,7 +24,7 @@ interface Props {
   onPlay: (entry: TrainingEntry) => void;
 }
 
-export default function SessionTimeline({chapters, entries, durationMs, currentMs, chapterId, activeItemId, onChapter, onSeek, onPlay, onPlayAll, annotationEnabled, onAnnotate, draftRange, onDeleteChapter, deletingDisabled}: Props) {
+export default function SessionTimeline({chapters, entries, durationMs, currentMs, chapterId, activeItemId, onChapter, onSeek, onPlay, onPlayAll, annotationEnabled, onAnnotate, draftRange, onDeleteChapter, deletingDisabled, onAnalyze}: Props) {
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState<{start: number; end: number} | null>(null);
   const anchor = useRef<number | null>(null);
@@ -53,6 +54,7 @@ export default function SessionTimeline({chapters, entries, durationMs, currentM
       <span className="timeline-clock">{formatMs(currentMs)} <span>/ {formatMs(durationMs)}</span></span>
     </div>
     <div className="annotation-toolbar">
+      <button className="btn btn-primary btn-sm" disabled={!chosen || !annotationEnabled} onClick={() => chosen && onAnalyze(chosen)}>分析本段</button>
       <button className="btn btn-ghost btn-sm" disabled={!annotationEnabled || !chosen} onClick={() => chosen && onAnnotate({start_ms: chosen.start_ms, end_ms: chosen.end_ms, annotation: chosen.annotation})}>{chosen?.annotation ? "编辑本段标注" : "标注选中训练段"}</button>
       {chosen && !chosen.annotation && <button className="btn btn-ghost btn-sm btn-danger" disabled={deletingDisabled || !chosen.entries.length} onClick={() => onDeleteChapter(chosen)}>删除选中自动片段</button>}
       <button className="btn btn-ghost btn-sm" aria-pressed={selecting} disabled={!annotationEnabled || !durationMs} onClick={() => {setSelecting(value => !value); setSelection(null);}}>拉选合并</button>
