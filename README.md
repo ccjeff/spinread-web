@@ -129,3 +129,20 @@ src/
 ## 单脉络 AI 分析
 
 视频详情选择训练脉络后点击“分析本段”。右侧可选择近端／远端目标、关注点和同一球员的历史同类训练，显示进度、历史记录、可回放证据、具体练习步骤与达标／复测标准。API key 由服务端配置，用户无需输入或勾选提供商授权；模型、采样、费用与 token 信息不对用户展示。历史训练需供球方式、移动模式和有序动作匹配，选择后表示确认同一球员。后端运行说明见兄弟仓库 `spinread-server/docs/chapter-analysis.md`。
+
+## 逐拍、落点与同步 3D 复盘
+
+视频详情中的复盘播放器现在支持逐拍触球导航、球路／骨架叠加、0.25× 慢放、可旋转 3D 骨架、原视频与 3D 并排对照。四角标定后显示疑似落点，复核为发球到对方台面、接发到对方台面或一般落台后才计入全片九宫格。缺失帧不插值，旧时间线标注失效，旧版无证据视频显示重新分析提示。需要新版后端与 `0008_replay_reviews` 迁移；详见相邻 `spinread-server/docs/evidence-replay.md`。
+
+
+### Pingpong3D replay and coaching integration
+
+The existing video, coach review and authorized coach video pages share the same replay component. Existing timelines and recordings remain usable while supplementary analysis runs. `SPINREAD_API_PROXY` configures the development API target (default `http://localhost:8000`); an isolated preview can use `SPINREAD_API_PROXY=http://127.0.0.1:8012 npm run dev -- --port 5182`.
+
+- Per-contact navigation and source-video clock drive 2D observations, NLF41/MediaPipe bones and court-aligned 3D ball flights. Fitted ball interpolation stays within one segment and never bridges missing data. NLF table coordinates use metres with Z up; legacy MediaPipe image padding and hip-relative coordinates stay separate. This viewer renders skeletons, not SMPL mesh vertices.
+- Landing distributions separate automatic estimates from human confirmations. Unknown depth/lateral coordinates do not enter automatic grid totals; review writes pin the exact analysis artifact and timeline version. Coaches see the same evidence but cannot start analysis or change owner calibration.
+- An owner can supplement an existing video using the engines reported by the server. Pingpong3D requires operator configuration and two explicit handedness/shirt-colour selections. Missing models/GPU and partial results are visible; no paid worker is provisioned by this client.
+- Replay contacts can generate draft receiving exercises. The original bounded prompt player remains in place. Post-attempt evidence and coach reference answers load only after a successful submission; the API independently enforces the attempt gate.
+- Coaches can save versioned reference answers with multiple acceptable receives, uncertainty, diagnosis and the specific contact evidence. A reference can be carried into a training task through the existing plan workflow; previous attempts, answer versions and task records are retained.
+
+Verification: `npm test`, `npm run build`, `npm run lint`. Coordinate, image-aspect and missing-trajectory cases have deterministic unit coverage. GPU/model accuracy is a backend validation responsibility; the frontend never converts model output into an automatic skill score.

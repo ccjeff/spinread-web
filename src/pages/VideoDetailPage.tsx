@@ -18,7 +18,7 @@ import type {
 import TopBar from "../components/TopBar";
 import StatusBadge from "../components/StatusBadge";
 import ProgressBar from "../components/ProgressBar";
-import Player from "../components/Player";
+import AnalysisPlayer from "../components/AnalysisPlayer";
 import type { PlayerHandle } from "../components/Player";
 import EventPanel from "../components/EventPanel";
 import ChapterAnalysisPanel from "../components/ChapterAnalysisPanel";
@@ -582,12 +582,12 @@ export default function VideoDetailPage() {
 
   const rerun = useCallback(async () => {
     if (!id) return;
-    if (!window.confirm("将重新运行完整分析流水线，期间时间线与报告会暂时不可用。继续？")) {
+    if (!window.confirm("将重新运行完整分析流水线并生成新的时间线版本，期间时间线与报告会暂时不可用。原视频和训练记录会保留，旧版本的落点确认需要重新复核。如只需补充逐拍、落点与 3D，请使用播放器下方的“补充／更新复盘分析”。继续重建时间线？")) {
       return;
     }
     try {
       await api.createPipelineRun(id);
-      showToast("ok", "已触发重新分析");
+      showToast("ok", "已开始重建时间线");
       setStatus(null);
       setTimeline(null);
       setTimelineUnavailable(false);
@@ -603,7 +603,7 @@ export default function VideoDetailPage() {
       if (err instanceof ApiError && err.status === 409) {
         showToast("err", "已有分析在进行中");
       } else {
-        showToast("err", err instanceof Error ? err.message : "触发重新分析失败");
+        showToast("err", err instanceof Error ? err.message : "重建时间线失败");
       }
     }
   }, [id, showToast]);
@@ -670,7 +670,7 @@ export default function VideoDetailPage() {
             )}
             {(ready || failure) && (
               <button type="button" className="btn btn-ghost" onClick={() => void rerun()}>
-                重新分析
+                重建时间线
               </button>
             )}
             <button type="button" className="btn btn-ghost" onClick={() => navigate("/")}>
@@ -728,7 +728,7 @@ export default function VideoDetailPage() {
           <>
             <div className="review-workspace">
               <div className="review-viewer">
-                <Player ref={playerRef} videoId={video.id} onTimeUpdate={handleTimeUpdate} />
+                <AnalysisPlayer ref={playerRef} videoId={video.id} timeline={timeline} currentMs={currentMs} activeItemId={activeItemId} onSeek={handleSeek} onTimeUpdate={handleTimeUpdate} />
                 <SessionTimeline chapters={navigation.chapters} entries={navigation.entries}
                   durationMs={durationMs} currentMs={currentMs} chapterId={chapterId}
                   draftRange={annotationDraft}

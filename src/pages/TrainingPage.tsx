@@ -16,7 +16,7 @@ export default function TrainingPage() {
   const [me, setMe] = useState<User | null>(null); const [plan, setPlan] = useState<Plan | null>(null);
   const [videos, setVideos] = useState<VideoSummary[]>([]); const [videoId, setVideoId] = useState(params.get("video") ?? "");
   const [report, setReport] = useState<AnalysisReport | null>(null);
-  const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false); const [creating, setCreating] = useState(false);
+  const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false); const [creating, setCreating] = useState(!!params.get("reference"));
   const playerId = params.get("player") ?? me?.id;
   const coaching = !!me && !!playerId && playerId !== me.id;
   const refresh = useCallback(async () => {if (!playerId) return; setError(""); setPlan((await loopApi.plan(playerId)).plan);}, [playerId]);
@@ -35,7 +35,8 @@ export default function TrainingPage() {
       <div className="video-list-toolbar">{!coaching && <button className="btn btn-primary" disabled={busy || !report} onClick={() => void run(async () => {const r = await loopApi.generate(report!.report_id); if (!r.added) return "当前报告还没有可直接转成训练任务的建议，可与教练一起制定。";}, "报告建议已加入计划；已有任务和教练锁定内容保留。")}>从报告生成建议（最多 3 项）</button>}
         <button className="btn btn-ghost" disabled={busy || !report} onClick={() => setCreating(!creating)}>手动创建训练任务</button>{videoId && <Link to={coaching ? `/coach/videos/${videoId}` : `/videos/${videoId}`}>回看报告与视频</Link>}</div>
       {!report && <p className="muted">请选择已生成报告的视频。</p>}
-      {creating && report && <ItemEditor key={report.report_id} busy={busy} onSave={values => run(async () => {await loopApi.createItem({report_id: report.report_id, title: values.title, priority: values.priority, drill: values.drill, retest: values.retest}); setCreating(false);}, "训练任务已创建")}/>}
+      {params.get("reference")&&videoId===params.get("video")&&<p className="quiz-note">新任务将关联刚才的教练参考答案版本，保留该拍的证据来源。</p>}
+      {creating && report && <ItemEditor key={report.report_id} busy={busy} onSave={values => run(async () => {await loopApi.createItem({report_id: report.report_id, title: values.title, priority: values.priority, drill: values.drill, retest: values.retest,...(params.get("reference")&&videoId===params.get("video")?{reference_answer_id:params.get("reference")!}:{})}); setCreating(false);}, "训练任务已创建")}/>}
     </section>
     {!plan?.items.length ? <p className="quiz-empty">还没有训练任务。可从报告生成建议，或和教练一起制定任务。</p> : plan.items.map(item => <TrainingCard key={`${item.id}:${item.version}`} item={item} coaching={coaching} videos={videos} busy={busy} onEdit={changes => run(() => loopApi.editItem(item, changes), "训练任务已保存")}/>)}
   </main></div>;
@@ -60,7 +61,7 @@ function TrainingCard({item, coaching, videos, busy, onEdit}: {item: PlanItem; c
   async function retest() {setComparing(true); setError(""); try {await loopApi.retest(item, videoId); setResults((await loopApi.retests(item)).items);} catch(e) {setError(e instanceof Error ? e.message : "复测失败");} finally {setComparing(false);}}
   return <section className="card loop-card"><div className="page-header"><h2>{item.priority}. {item.title}</h2><span>{({ACTIVE:"进行中",DONE:"已完成",DROPPED:"已暂停"} as Record<string,string>)[item.status]} · v{item.version}</span></div><p className="muted">{SOURCES[item.source]}{item.locked_by_coach ? " · 教练已锁定" : ""}</p>
     {item.baseline_stale && <p className="banner banner-warn">来源时间线或报告已更新。此任务保留历史，但复测不能直接使用旧基线。</p>}
-    <p className="preserve-lines">{item.drill.description}</p><p>每次 {item.drill.target_repetitions} 次 · 共 {item.drill.sessions} 次训练</p><p>复测：{item.retest.context} · {METRICS[item.retest.metric as keyof typeof METRICS]} · 至少 {item.retest.minimum_samples} 个样本 · {item.retest.direction === "increase" ? "增加" : "减少"} {(item.retest.relative_threshold * 100).toFixed(0)}%</p>
+    {item.reference_answer_id&&<p className="muted">来源：教练已确认的接发球参考答案</p>}<p className="preserve-lines">{item.drill.description}</p><p>每次 {item.drill.target_repetitions} 次 · 共 {item.drill.sessions} 次训练</p><p>复测：{item.retest.context} · {METRICS[item.retest.metric as keyof typeof METRICS]} · 至少 {item.retest.minimum_samples} 个样本 · {item.retest.direction === "increase" ? "增加" : "减少"} {(item.retest.relative_threshold * 100).toFixed(0)}%</p>
     <div className="video-list-toolbar"><Link to={coaching ? `/coach/videos/${item.video_id}` : `/videos/${item.video_id}`}>查看来源证据</Link>{(!item.locked_by_coach || coaching) && <button className="btn btn-ghost" disabled={busy} onClick={() => setEditing(!editing)}>{editing ? "收起编辑" : "修改训练任务"}</button>}</div>
     {editing && <ItemEditor item={item} busy={busy} coaching={coaching} onSave={async v => {const changes = {title: v.title, priority: v.priority, drill: v.drill, retest: v.retest}; await onEdit(coaching ? v : changes);}}/>}
     {!coaching ? <><label className="field"><span>我的训练记录 / 给教练的问题</span><textarea value={note} maxLength={4000} onChange={e => setNote(e.target.value)}/></label><div className="video-list-toolbar"><button className="btn btn-ghost" disabled={busy} onClick={() => void onEdit({player_note:note})}>保存记录</button>{["ACTIVE","DONE","DROPPED"].map(status => <button className="btn btn-ghost" key={status} disabled={busy || status === item.status} onClick={() => void onEdit({status, player_note:note})}>{({ACTIVE:"继续训练",DONE:"标记完成",DROPPED:"暂停任务"} as Record<string,string>)[status]}</button>)}</div>

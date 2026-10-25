@@ -1209,3 +1209,60 @@ h3 {
 @media (max-width:900px) {.chapter-analysis-panel {position:relative; max-height:720px; min-height:360px;}}
 
 .analysis-sample-note {font-size:12px; color:var(--text-dim); margin:10px 0;}
+
+/* Evidence replay: source video and every view share one playback clock. */
+.replay-video-surface {position:relative;}
+.replay-overlay {position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden;}
+.replay-overlay.is-calibrating {pointer-events:auto;cursor:crosshair;background:#0001;}
+.replay-toolbar {display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0;font-size:12px;}
+.replay-toolbar label {display:flex;gap:6px;align-items:center;}
+.replay-toolbar input[type=number] {width:90px;}
+.replay-toolbar select,.landing-row select,.calibration-editor input {background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:6px;}
+.replay-heading,.replay-pane-title {display:flex;justify-content:space-between;gap:12px;align-items:center;}
+.replay-heading {margin:24px 0 12px;}
+.replay-heading h3 {margin:5px 0;}
+.replay-pane-title span {font-size:11px;color:var(--text-dim);}
+.replay-grid {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;}
+.replay-pane {min-width:0;border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--bg-elev);}
+.pose-scene,.placement-table {width:100%;height:270px;display:block;background:#111b27;border-radius:6px;margin:12px 0;}
+.placement-table {background:transparent;}
+.contact-strip {display:flex;gap:8px;overflow-x:auto;padding:6px 0 14px;}
+.contact-button {display:flex;flex-direction:column;gap:4px;min-width:95px;flex-shrink:0;background:var(--bg-elev);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;cursor:pointer;text-align:left;}
+.contact-button small {font-size:10px;color:var(--text-dim);}
+.contact-button.is-current {border-color:#a8c8ff;background:#23334b;}
+.replay-note {font-size:12px;line-height:1.8;margin:10px 0;}
+.pose-angles {display:flex;flex-wrap:wrap;gap:12px;font-size:12px;}
+.placement-grid {width:100%;font-size:12px;border-collapse:collapse;}
+.placement-grid th,.placement-grid td {padding:6px;border-bottom:1px solid var(--border);text-align:center;}
+.calibration-editor {padding:16px;border:1px solid #d6ab64;border-radius:9px;margin:16px 0;font-size:13px;}
+.calibration-fields {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.calibration-fields label {display:flex;flex-direction:column;gap:4px;}
+.calibration-fields span {display:flex;gap:4px;}
+.calibration-fields input {width:50%;min-width:0;}
+.landing-reviews {border:1px solid var(--border);border-radius:9px;padding:12px;margin:14px 0;font-size:12px;}
+.landing-reviews summary {cursor:pointer;}
+.landing-row {display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);}
+@media(max-width:650px){.replay-grid{grid-template-columns:1fr;}.replay-heading{align-items:flex-start;}.pose-scene{height:240px;}}
+
+.replay-media-pair.is-paired {display:grid;grid-template-columns:minmax(0,1.4fr) minmax(240px,1fr);gap:12px;align-items:start;}
+.replay-media-pair.is-paired .pose-scene {height:210px;}
+.replay-media-pair.is-paired .replay-toolbar {font-size:11px;gap:6px;}
+.replay-grid.is-paired {grid-template-columns:1fr;}
+.replay-grid.is-paired .placement-table {height:230px;}
+@media(max-width:850px){.replay-media-pair.is-paired{grid-template-columns:1fr;}}
+
+/* Shared analysis and structured coach evidence. */
+.replay-limitations {font-size:12px;line-height:1.8;margin:16px 0;overflow-wrap:anywhere;}
+.analysis-player-fields,.reference-answer-form fieldset {border:1px solid var(--border);border-radius:8px;padding:12px;margin:14px 0;min-width:0;}
+.reference-answer-panel {border-top:1px solid var(--border);padding-top:12px;margin-top:12px;}
+.reference-answer-panel .btn {margin:6px 8px 6px 0;}
+.reference-summary {padding:12px 0;font-size:13px;line-height:1.8;}
+.reference-summary p {margin:6px 0;}
+.reference-answer-form {max-width:720px;margin:12px 0;}
+.reference-answer-form .field select,.reference-answer-form .field textarea {width:100%;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px;font:inherit;}
+.reference-answer-form .field textarea {min-height:96px;resize:vertical;}
+.quiz-evidence-replay .pose-scene {height:300px;}
+.quiz-reference-answers {margin-top:20px;}
+.analysis-player .banner {overflow-wrap:anywhere;}
+
+.biomechanics-notes {margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:8px;font-size:13px;line-height:1.8;}
