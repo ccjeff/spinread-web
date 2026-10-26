@@ -7,12 +7,14 @@ import {quizApi} from '../api/quiz';
 import type {PlayerHandle} from './Player';
 import type {ActiveTimeline} from '../api/types';
 import {replayApi} from '../api/replay';
-import type {Replay, Point2, Phase, Statistics, LandingReview, ReplayAnalysis, AnalysisPlayerInfo} from '../api/replay';
-import {nearestIndex, observedTrail, imagePoint, placementWindowCounts, placementEmptyReason, calibrationWindows, upsertCalibration, calibrationRangeIssue, reviewsOutsideCalibrationChanges} from '../utils/replay';
+import type {Replay, Point2, Phase, Statistics, LandingReview, ReplayAnalysis, ReplayEngine, AnalysisPlayerInfo} from '../api/replay';
+import {nearestIndex, observedTrail, imagePoint, placementWindowCounts, placementEmptyReason, calibrationWindows, upsertCalibration, calibrationRangeIssue, reviewsOutsideCalibrationChanges, ballSegmentSeekTime} from '../utils/replay';
 const formatMs=(ms:number)=>`${Math.floor(ms/60000).toString().padStart(2,'0')}:${((ms%60000)/1000).toFixed(2).padStart(5,'0')}`;
 
 const phaseLabels={SERVE:'发球落点',RECEIVE:'接发落点',RALLY:'相持落点',UNKNOWN:'待确认'};
 const cornerNames=['远端左角','远端右角','近端右角','近端左角'];
+const engineNames={local:'本地视觉分析',pingpong3d:'Pingpong3D · 球台与人体',nlf:'NLF / SMPL · 人体网格'};
+const nlfMissing:Record<string,string>={NLF_WEIGHTS_MISSING:'缺少 NLF 模型权重',SMPL_FACES_MISSING:'缺少 SMPL 网格拓扑',CUDA_UNAVAILABLE:'没有可用的 CUDA GPU',TORCH_MISSING:'尚未安装 PyTorch',TORCH_UNAVAILABLE:'PyTorch 无法加载',TORCHVISION_MISSING:'尚未安装 TorchVision',TORCHVISION_UNAVAILABLE:'TorchVision 无法加载',NLF_RUNTIME_MISSING:'NLF 运行环境尚未配置'};
 interface Props {videoId: string; timeline: ActiveTimeline | null; currentMs: number; activeItemId: string | null; onTimeUpdate: (seconds:number)=>void; onSeek:(seconds:number)=>void; readOnly?:boolean}
 
 const AnalysisPlayer=forwardRef<PlayerHandle,Props>(function AnalysisPlayer({videoId,timeline,currentMs,activeItemId,onTimeUpdate,onSeek,readOnly=false},ref){
@@ -28,7 +30,7 @@ const AnalysisPlayer=forwardRef<PlayerHandle,Props>(function AnalysisPlayer({vid
   const [calStart,setCalStart]=useState(0),[calEnd,setCalEnd]=useState(0);
   const [calibrationId,setCalibrationId]=useState('');
   const [modelStats,setModelStats]=useState(true);
-  const [analysis,setAnalysis]=useState<ReplayAnalysis|null>(null),[engine,setEngine]=useState<'local'|'pingpong3d'>('local');
+  const [analysis,setAnalysis]=useState<ReplayAnalysis|null>(null),[engine,setEngine]=useState<ReplayEngine>('local');
   const [notice,setNotice]=useState('');
   const [players,setPlayers]=useState([{hand:'',kit:''},{hand:'',kit:''}]);
   const playersReady=players.every(p=>p.hand&&p.kit)&&players[0].kit!==players[1].kit;
@@ -103,9 +105,11 @@ const AnalysisPlayer=forwardRef<PlayerHandle,Props>(function AnalysisPlayer({vid
     NO_VALID_LANDING:'当前窗口尚未检测到符合条件的落台候选。标定只建立球台坐标，仍需连续球路证据；可检查原片、标定区间或其他回合。',
     NO_PHASE_ESTIMATE:'该阶段暂时没有自动归类的落点估计。本地视觉候选默认“阶段待归类”，可在“全部落点”查看并人工确认。',
     NO_CONFIRMED_PHASE:'当前筛选尚无人工确认的落点。请在候选列表回看并确认所属阶段。'};
-  const poseView=<PoseReplayView pose={current?.pose??null} ball={current?.ball_3d} timeMs={currentMs}/>;
+  const poseView=<PoseReplayView pose={current?.pose??null} ball={current?.ball_3d} mesh={current?.mesh} timeMs={currentMs}/>;
   const allHits=timeline?.items.filter(i=>i.type==='HIT_CANDIDATE'&&i.parent_id===rallyId).map(i=>i.start_ms).sort((a,b)=>a-b)??[];
   const previousHit=allHits.filter(t=>t<currentMs-40).at(-1),nextHit=allHits.find(t=>t>currentMs+40);
+  const nextBall=current?.ball_3d?.segments.find(segment=>segment.start_ms>currentMs+2&&ballSegmentSeekTime(segment)!==null);
+  const nextBallTarget=nextBall?ballSegmentSeekTime(nextBall):null;
   const analysisActive=analysis?.state==='QUEUED'||analysis?.state==='RUNNING';
   useEffect(()=>{
     if(!version)return;
@@ -115,15 +119,15 @@ const AnalysisPlayer=forwardRef<PlayerHandle,Props>(function AnalysisPlayer({vid
       const key=`${s.id}:${s.state}`;
       if(previousAnalysis.current!==null&&previousAnalysis.current!==key&&['READY','PARTIAL_READY'].includes(s.state))setRevision(n=>n+1);
       previousAnalysis.current=key;setAnalysis(s);
-      if(s.available_engines.length===1)setEngine(s.available_engines[0]);
+      setEngine(previous=>s.available_engines.includes(previous)?previous:s.available_engines[0]??'local');
     }).catch(()=>{if(!cancelled)setAnalysis(null);});
     void update();
     const timer=analysisActive?setInterval(()=>void update(),2500):null;
     return()=>{cancelled=true;if(timer)clearInterval(timer);};
   },[videoId,version,analysisActive]);
-  async function analyze(){
-    if(!version)return;setBusy(true);setError('');
-    try{setAnalysis(await replayApi.analyze(videoId,version,engine,engine==='pingpong3d'?players as AnalysisPlayerInfo[]:undefined));setNotice('正在补充复盘证据，原时间线和训练记录保持可用。');}
+  async function analyze(selected:ReplayEngine=engine){
+    if(!version||!analysis?.available_engines.includes(selected)||(selected==='nlf'&&!analysis.nlf?.available))return;setBusy(true);setError('');
+    try{setAnalysis(await replayApi.analyze(videoId,version,selected,selected==='pingpong3d'?players as AnalysisPlayerInfo[]:undefined));setNotice('正在补充复盘证据，原时间线和训练记录保持可用。');}
     catch(e){setError(e instanceof Error?e.message:'启动分析失败');}finally{setBusy(false);}
   }
   async function generateQuiz(){
@@ -164,9 +168,10 @@ const AnalysisPlayer=forwardRef<PlayerHandle,Props>(function AnalysisPlayer({vid
     <div className="replay-heading"><div><span className="eyebrow">EVIDENCE REPLAY</span><h3>每一拍，都能回看依据</h3></div>
       {!readOnly&&<button className="btn btn-ghost btn-sm" disabled={!current||busy} onClick={()=>beginCalibration()}>{activeCalibration?'调整当前标定':'标定当前机位'}</button>}</div>
     {analysis&&<div className="replay-toolbar"><span role="status">复盘分析：{{NONE:'尚未补充',QUEUED:'排队中',RUNNING:'分析中',READY:'已完成',PARTIAL_READY:'部分能力可用',FAILED:'分析失败',STALE:'时间线已更新'}[analysis.state]}</span>
-      {!readOnly&&<>{analysis.available_engines.length>1&&<label>分析引擎<select value={engine} disabled={busy||analysisActive} onChange={e=>setEngine(e.target.value as typeof engine)}>{analysis.available_engines.map(e=><option key={e} value={e}>{e==='pingpong3d'?'Pingpong3D · 球台与人体':'本地视觉分析'}</option>)}</select></label>}<button className="btn btn-primary btn-sm" disabled={busy||analysisActive||!analysis.available_engines.length||!version||(engine==='pingpong3d'&&!playersReady)} onClick={()=>void analyze()}>{analysisActive?'正在分析…':'补充／更新复盘分析'}</button>{!analysis.available_engines.length&&<span className="muted">分析模型尚未配置</span>}</>}
-      {analysis.error_code&&<span className="muted">{({GPU_NOT_CONFIGURED:'三维分析服务尚未配置',TABLE_CALIBRATION_REQUIRED:'需要先核对球台标定',NO_USABLE_EVIDENCE:'此视频尚未获得可用的视觉证据',ANALYSIS_TIMEOUT:'分析超时，可以重试',PINGPONG3D_ANALYSIS_FAILED:'三维分析失败，可以重试',POSE_UNAVAILABLE:'本次动作骨架不可用，已保留其他可用证据',PLACEMENTS_UNAVAILABLE:'本次落点估计不可用，已保留其他可用证据',BALL_3D_UNAVAILABLE:'本次三维球路不可用，已保留其他可用证据',POSE_NO_DETECTIONS:'本次未检测到可用的人体动作，请检查原片中的球员是否清晰可见'} as Record<string,string>)[analysis.error_code]??'本次分析未完成，请检查分析服务后重试'}</span>}
+      {!readOnly&&<>{analysis.available_engines.length>1&&<label>分析引擎<select value={engine} disabled={busy||analysisActive} onChange={e=>setEngine(e.target.value as ReplayEngine)}>{analysis.available_engines.map(e=><option key={e} value={e}>{engineNames[e]}</option>)}</select></label>}<button className="btn btn-primary btn-sm" disabled={busy||analysisActive||!analysis.available_engines.includes(engine)||!version||(engine==='pingpong3d'&&!playersReady)||(engine==='nlf'&&!analysis.nlf?.available)} onClick={()=>void analyze()}>{analysisActive?'正在分析…':'补充／更新复盘分析'}</button>{!analysis.available_engines.length&&<span className="muted">分析模型尚未配置</span>}</>}
+      {analysis.error_code&&<span className="muted">{({NLF_RUNTIME_UNAVAILABLE:'NLF 模型或 CUDA 环境尚未就绪',NLF_ANALYSIS_FAILED:'NLF 人体网格分析失败，可以在检查运行环境后重试',BALL_3D_PARTIAL_COVERAGE:'三维球路仅在有限区间可用，未通过质量门限的区间保留缺口',GPU_NOT_CONFIGURED:'三维分析服务尚未配置',TABLE_CALIBRATION_REQUIRED:'需要先核对球台标定',NO_USABLE_EVIDENCE:'此视频尚未获得可用的视觉证据',ANALYSIS_TIMEOUT:'分析超时，可以重试',PINGPONG3D_ANALYSIS_FAILED:'三维分析失败，可以重试',POSE_UNAVAILABLE:'本次动作骨架不可用，已保留其他可用证据',PLACEMENTS_UNAVAILABLE:'本次落点估计不可用，已保留其他可用证据',BALL_3D_UNAVAILABLE:'本次三维球路不可用，已保留其他可用证据',POSE_NO_DETECTIONS:'本次未检测到可用的人体动作，请检查原片中的球员是否清晰可见'} as Record<string,string>)[analysis.error_code]??'本次分析未完成，请检查分析服务后重试'}</span>}
     </div>}
+    {analysis?.nlf&&<div className="nlf-runtime-status"><div className="replay-toolbar"><strong>NLF / SMPL 人体网格</strong><span>{analysis.nlf.available?'运行环境已就绪':'本机运行环境未就绪'}</span>{!readOnly&&<button className="btn btn-ghost btn-sm" disabled={busy||analysisActive||!version||!analysis.nlf.available||!analysis.available_engines.includes('nlf')} onClick={()=>void analyze('nlf')}>运行 NLF / SMPL</button>}</div><p className="replay-note">{analysis.nlf.available?'可按原片时间生成真实模型网格；已有视频、骨架和训练记录保留。':`缺少条件：${analysis.nlf.missing.map(code=>nlfMissing[code]??code).join('、')||'请检查 NLF 模型与 GPU 配置'}。当前已有的 MediaPipe 骨架与球路仍可独立查看。`}</p></div>}
     {!readOnly&&engine==='pingpong3d'&&analysis?.available_engines.includes('pingpong3d')&&<fieldset className="analysis-player-fields"><legend>本段视频的两位球员</legend>{players.map((p,i)=><div className="replay-toolbar" key={i}><span>球员 {i+1}</span><label>持拍手<select aria-label={`球员 ${i+1} 持拍手`} value={p.hand} disabled={analysisActive||busy} onChange={e=>setPlayers(old=>old.map((v,k)=>k===i?{...v,hand:e.target.value}:v))}><option value="">请选择</option><option value="right">右手</option><option value="left">左手</option></select></label><label>球衣主色<select aria-label={`球员 ${i+1} 球衣主色`} value={p.kit} disabled={analysisActive||busy} onChange={e=>setPlayers(old=>old.map((v,k)=>k===i?{...v,kit:e.target.value}:v))}><option value="">请选择</option>{Object.entries({red:'红',green:'绿',blue:'蓝',yellow:'黄',white:'白',black:'黑'}).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label></div>)}<p className="muted replay-note">两人的球衣主色需要可区分；持拍手用于解释落点和动作，不自动猜测。</p></fieldset>}
     {notice&&<p role="status" className="banner">{notice} {!readOnly&&<Link to={`/videos/${videoId}/quizzes`}>查看练习片段</Link>}</p>}
     {error&&<div className="banner banner-error" role="alert">{error} <button className="btn btn-ghost btn-sm" onClick={()=>setRevision(n=>n+1)}>刷新复盘</button></div>}
@@ -184,6 +189,7 @@ const AnalysisPlayer=forwardRef<PlayerHandle,Props>(function AnalysisPlayer({vid
     </div>}
     {current&&<>
       <div className="replay-toolbar"><button className="btn btn-ghost btn-sm" disabled={previousHit===undefined} onClick={()=>seek(previousHit!)}>上一拍</button><button className="btn btn-ghost btn-sm" disabled={nextHit===undefined} onClick={()=>seek(nextHit!)}>下一拍</button>{!readOnly&&<button className="btn btn-ghost btn-sm" disabled={generating||allHits.length<2} onClick={()=>void generateQuiz()}>{generating?'正在准备…':'从本回合生成接发练习'}</button>}</div>
+      <div className="replay-toolbar">{current.ball_3d&&<><button className="btn btn-ghost btn-sm" disabled={nextBallTarget===null} onClick={()=>{if(nextBallTarget===null)return;seek(nextBallTarget);requestAnimationFrame(()=>calibrationAnchor.current?.scrollIntoView({behavior:'smooth',block:'start'}));}}>下一段可用 3D 球路（本窗口）</button><span className="muted">{current.ball_3d.segments.length?`本窗口有 ${current.ball_3d.segments.length} 段拟合球路`:'本窗口没有通过质量门限的 3D 球路'}</span></>}</div>
       <div className="contact-strip" aria-label="逐拍触球候选">{current.contacts.map(c=><button key={c.time_ms} className={`contact-button${Math.abs(currentMs-c.time_ms)<130?' is-current':''}`} onClick={()=>seek(c.time_ms)}><strong>第 {c.ordinal} 拍</strong><span>{formatMs(c.time_ms)}</span><small>{c.visual_supported?(c.audio_supported?'视觉＋声音':'视觉候选'):'时间线候选'}</small></button>)}{!current.contacts.length&&<p className="muted">这个区间暂无触球候选。</p>}</div>
       {(current.next_start_ms!==null||current.start_ms>current.rally_start_ms)&&<div className="replay-toolbar"><button className="btn btn-ghost btn-sm" disabled={current.start_ms<=current.rally_start_ms} onClick={()=>seek(Math.max(current.rally_start_ms,current.start_ms-30000))}>上一段</button><span>长回合按 30 秒加载</span><button className="btn btn-ghost btn-sm" disabled={current.next_start_ms===null} onClick={()=>seek(current.next_start_ms!)}>下一段</button></div>}
       <div className={`replay-grid${paired?' is-paired':''}`}>

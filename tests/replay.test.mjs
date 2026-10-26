@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nearestIndex,observedTrail,projectJoint,projectCourt,ballAt,imagePoint,placementWindowCounts,placementEmptyReason,calibrationWindows,upsertCalibration,calibrationRangeIssue,reviewsOutsideCalibrationChanges} from '../src/utils/replay.ts';
+import {nearestIndex,observedTrail,projectJoint,projectCourt,ballAt,imagePoint,placementWindowCounts,placementEmptyReason,calibrationWindows,upsertCalibration,calibrationRangeIssue,reviewsOutsideCalibrationChanges,ballSegmentSeekTime} from '../src/utils/replay.ts';
 test('replay does not bridge missing frames or stale timestamps',()=>{
   const frames=[[0,.1,.2],[33,.2,.3],[66,null,null],[99,.3,.4],[132,.4,.5]];
   assert.deepEqual(observedTrail(frames,66),[]);
@@ -87,4 +87,30 @@ test('calibration edits invalidate only old/new affected half-open ranges and ke
   assert.deepEqual(reviewsOutsideCalibrationChanges([a,b],[a,b],reviews),reviews);
   assert.deepEqual(reviewsOutsideCalibrationChanges([a,b],[{...a,end_ms:550},b],reviews).map(r=>r.time_ms),[99,550,700,899,900]);
   assert.deepEqual(reviewsOutsideCalibrationChanges([a,b],[b],reviews).map(r=>r.time_ms),[99,500,549,550,700,899,900]);
+});
+
+test('accepted flight starts remain visible at a preceding half-open gap boundary',()=>{
+  const segment={start_ms:14668,end_ms:14768,frames:[[14668,0,0,1],[14701,1,0,1],[14735,2,0,1],[14768,3,0,1]],status:'MODEL_ESTIMATE'};
+  const evidence={coordinate_space:'TABLE_METERS_Z_UP',unit:'m',segments:[segment],gaps:[{start_ms:0,end_ms:14668}]};
+  assert.equal(ballAt(evidence,14667),null);
+  assert.deepEqual(ballAt(evidence,14668).point,[0,0,1]);
+  assert.deepEqual(ballAt(evidence,14669).trail[0],[0,0,1]);
+});
+
+test('available-ball navigation targets the interior even after source-video frame quantization',()=>{
+  const segment={start_ms:14668,end_ms:15035,frames:[[14668,0,0,1],[15035,1,0,1]],status:'MODEL_ESTIMATE'};
+  const target=ballSegmentSeekTime(segment);
+  for(const fps of [24,25,30,60]){
+    const actual=Math.floor(target*fps/1000)*1000/fps;
+    assert.ok(actual>segment.start_ms&&actual<segment.end_ms);
+  }
+  assert.equal(ballSegmentSeekTime({...segment,frames:[]}),null);
+  assert.equal(ballSegmentSeekTime({...segment,end_ms:14000}),null);
+});
+
+test('ball interpolation never spans an explicit internal gap while its endpoint observation stays visible',()=>{
+  const evidence={coordinate_space:'TABLE_METERS_Z_UP',unit:'m',segments:[{start_ms:0,end_ms:100,frames:[[0,0,0,1],[100,1,0,1]],status:'MODEL_ESTIMATE'}],gaps:[{start_ms:20,end_ms:80}]};
+  assert.equal(ballAt(evidence,90),null);
+  assert.deepEqual(ballAt(evidence,100).point,[1,0,1]);
+  assert.deepEqual(ballAt(evidence,100).trail,[[1,0,1]]);
 });

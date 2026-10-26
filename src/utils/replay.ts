@@ -87,7 +87,7 @@ export function projectCourt(point: Point3, yaw: number): Point2 {
 
 /** Display interpolation stays within one fitted flight; never cross a missing segment. */
 export function ballAt(data: Ball3D | null | undefined, time: number): {point: Point3; trail: Point3[]; fit?: string} | null {
-  if (!data || data.coordinate_space !== 'TABLE_METERS_Z_UP' || data.unit !== 'm' || data.gaps.some(g=>time>=g.start_ms&&time<=g.end_ms)) return null;
+  if (!data || data.coordinate_space !== 'TABLE_METERS_Z_UP' || data.unit !== 'm' || data.gaps.some(g=>time>=g.start_ms&&time<g.end_ms)) return null;
   const segment=data.segments.find(s=>time>=s.start_ms&&time<=s.end_ms);
   if(!segment) return null;
   const frames=segment.frames;
@@ -95,16 +95,24 @@ export function ballAt(data: Ball3D | null | undefined, time: number): {point: P
   if(i<0) return null;
   const after=frames[i],before=frames[Math.max(0,i-1)];
   if(time<before[0]||time>after[0]||after[0]-before[0]>150) return null;
+  if(time!==after[0]&&data.gaps.some(g=>g.start_ms<after[0]&&g.end_ms>before[0]))return null;
   const alpha=after[0]===before[0]?0:(time-before[0])/(after[0]-before[0]);
   const point:Point3=[1,2,3].map(k=>before[k]+(after[k]-before[k])*alpha) as Point3;
   if(!point.every(Number.isFinite)) return null;
   const trail:Point3[]=[];
   for(let j=Math.max(0,i-1);j>=0&&frames[j][0]>=time-350;j--){
-    if((j<i-1&&frames[j+1][0]-frames[j][0]>150)||data.gaps.some(g=>g.start_ms<=time&&g.end_ms>=frames[j][0]))break;
+    if((j<i-1&&frames[j+1][0]-frames[j][0]>150)||data.gaps.some(g=>g.start_ms<time&&g.end_ms>frames[j][0]))break;
     trail.unshift(frames[j].slice(1) as Point3);
   }
   trail.push(point);
   return {point,trail,fit:segment.fit};
+}
+
+/** Seek inside available samples so video frame quantization cannot land before a fit. */
+export function ballSegmentSeekTime(segment:Ball3D['segments'][number]):number|null {
+  if(!segment.frames.length)return null;
+  const start=Math.max(segment.start_ms,segment.frames[0][0]),end=Math.min(segment.end_ms,segment.frames.at(-1)![0]);
+  return Number.isFinite(start)&&Number.isFinite(end)&&end>start?(start+end)/2:null;
 }
 
 export function imagePoint(point:Point2,width:number,height:number,imageSpace?:string):Point2 {

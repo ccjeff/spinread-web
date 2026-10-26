@@ -24,7 +24,7 @@ export default function QuizEvidenceReplay({item}:{item:QuizItem}){
     {error&&<p role="alert" className="banner banner-error">{error} <button className="btn btn-ghost btn-sm" onClick={()=>setRetry(n=>n+1)}>重试加载证据</button></p>}
     {replay?<>
       <div className="replay-toolbar">{replay.contacts.map(c=><button className="btn btn-ghost btn-sm" key={c.time_ms} onClick={()=>setSeek(s=>({ms:c.time_ms,sequence:s.sequence+1}))}>第 {c.ordinal} 拍 · {(c.time_ms/1000).toFixed(2)} 秒</button>)}</div>
-      <PoseReplayView pose={replay.pose??null} ball={replay.ball_3d} timeMs={ms}/><BiomechanicsNotes items={replay.biomechanics??[]} timeMs={ms} onSeek={ms=>setSeek(s=>({ms,sequence:s.sequence+1}))}/>
+      <PoseReplayView pose={replay.pose??null} ball={replay.ball_3d} mesh={replay.mesh} timeMs={ms}/><BiomechanicsNotes items={replay.biomechanics??[]} timeMs={ms} onSeek={ms=>setSeek(s=>({ms,sequence:s.sequence+1}))}/>
       <p className="muted replay-note">{replay.placements?.filter(p=>p.table_xy!==null&&p.status!=='REJECTED').length??0} 个可定位落点 · 模型估计与教练确认分开保留。旋转未知时不计算正确率。</p>
     </>:data&&<p className="muted">这道题尚无对应的视觉复盘依据，原片与作答记录仍保留。</p>}
     {latest.size>0?<section className="quiz-reference-answers"><h3>教练参考答案</h3>{[...latest.values()].map(r=><ReferenceSummary key={r.id} reference={r}/>)}</section>:data&&<p className="muted">尚无教练确认的参考答案，可以把这次判断提交给教练讨论。</p>}
