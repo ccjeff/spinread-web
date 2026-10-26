@@ -1216,6 +1216,7 @@ h3 {
 .replay-overlay.is-calibrating {pointer-events:auto;cursor:crosshair;background:#0001;}
 .replay-toolbar {display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:12px 0;font-size:12px;}
 .replay-toolbar label {display:flex;gap:6px;align-items:center;}
+.replay-toolbar button[aria-pressed=true] {background:#294a6b;border-color:#98c4ef;color:#f1f6fd;}
 .replay-toolbar input[type=number] {width:90px;}
 .replay-toolbar select,.landing-row select,.calibration-editor input {background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:6px;}
 .replay-heading,.replay-pane-title {display:flex;justify-content:space-between;gap:12px;align-items:center;}
@@ -1235,6 +1236,12 @@ h3 {
 .placement-grid {width:100%;font-size:12px;border-collapse:collapse;}
 .placement-grid th,.placement-grid td {padding:6px;border-bottom:1px solid var(--border);text-align:center;}
 .calibration-editor {padding:16px;border:1px solid #d6ab64;border-radius:9px;margin:16px 0;font-size:13px;}
+.replay-calibration-anchor,.calibration-editor,.landing-reviews {scroll-margin-top:80px;}
+.calibration-guide {padding:14px 16px;border:1px solid #d6ab64;border-radius:9px;margin-bottom:12px;font-size:13px;background:var(--bg-elev);}
+.calibration-guide p {margin:8px 0;line-height:1.6;}
+.calibration-guide .replay-toolbar {margin-bottom:0;}
+.placement-help {padding:12px;border-left:3px solid var(--accent);background:var(--bg);font-size:12px;line-height:1.6;margin:12px 0;}
+.placement-help p {margin:0 0 8px;}
 .calibration-fields {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
 .calibration-fields label {display:flex;flex-direction:column;gap:4px;}
 .calibration-fields span {display:flex;gap:4px;}

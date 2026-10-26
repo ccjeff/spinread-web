@@ -1,4 +1,58 @@
-import type {Ball3D, Frame, Point2, Point3} from '../api/replay.ts';
+import type {Ball3D, Frame, Point2, Point3, Placement, Review, TableCalibration, LandingReview} from '../api/replay.ts';
+
+export function calibrationWindows(review:Review|undefined):TableCalibration[] {
+  if(!review)return [];
+  const windows=review.calibrations??(review.corners?[{id:'legacy',corners:review.corners,start_ms:review.calibration_start_ms,end_ms:review.calibration_end_ms}]:[]);
+  return [...windows].sort((a,b)=>a.start_ms-b.start_ms);
+}
+
+export function upsertCalibration(windows:TableCalibration[],draft:TableCalibration):TableCalibration[] {
+  return [...windows.filter(w=>w.id!==draft.id),draft].sort((a,b)=>a.start_ms-b.start_ms);
+}
+
+export function calibrationRangeIssue(windows:TableCalibration[],duration:number):string|null {
+  if(windows.length>100)return '最多保存 100 个标定区间。';
+  const ordered=[...windows].sort((a,b)=>a.start_ms-b.start_ms);
+  if(new Set(ordered.map(w=>w.id)).size!==ordered.length)return '标定区间编号重复，请刷新后重试。';
+  for(let i=0;i<ordered.length;i++){
+    const w=ordered[i];
+    if(!Number.isFinite(w.start_ms)||!Number.isFinite(w.end_ms)||w.start_ms<0||w.end_ms>duration||w.end_ms<=w.start_ms)return '有效区间必须在原视频内，且终点晚于起点。';
+    if(i>0&&ordered[i-1].end_ms>w.start_ms)return '有效区间与已保存的标定重叠。请缩小范围，或定位到已有区间进行调整。';
+  }
+  return null;
+}
+
+/** Changed camera geometry invalidates only reviews in the old/new affected ranges. */
+export function reviewsOutsideCalibrationChanges(previous:TableCalibration[],next:TableCalibration[],reviews:LandingReview[]):LandingReview[] {
+  const same=(a:TableCalibration,b:TableCalibration)=>JSON.stringify([a.start_ms,a.end_ms,a.corners])===JSON.stringify([b.start_ms,b.end_ms,b.corners]);
+  const affected=[...previous.filter(a=>!next.some(b=>a.id===b.id&&same(a,b))),...next.filter(b=>!previous.some(a=>a.id===b.id&&same(a,b)))];
+  return reviews.filter(r=>!affected.some(w=>r.time_ms>=w.start_ms&&r.time_ms<w.end_ms));
+}
+
+export function placementWindowCounts(placements:Placement[]) {
+  const active=placements.filter(p=>p.status!=='REJECTED');
+  const valid=active.filter(p=>p.table_xy?.every(v=>Number.isFinite(v)&&v>=0&&v<=1)
+    && ['SHORT','HALF_LONG','LONG'].includes(p.depth) && ['LEFT','CENTER','RIGHT'].includes(p.lateral));
+  return {pending:active.filter(p=>p.status==='CANDIDATE').length,
+    unclassified:valid.filter(p=>p.phase==='UNKNOWN').length,invalid:active.length-valid.length,
+    projected:valid.length,local:active.filter(p=>p.basis==='IMAGE_VERTICAL_REVERSAL_INSIDE_CALIBRATED_TABLE').length,
+    upstream:active.filter(p=>p.basis==='PINGPONG3D_MODEL_ESTIMATE').length};
+}
+
+/** UNKNOWN phases must not become serve/receive samples merely because a grid is empty. */
+export function placementEmptyReason(input:{sampleCount:number|undefined;model:boolean;phase:'ALL'|'SERVE'|'RECEIVE'|'RALLY';calibrated:boolean;calibrationOverlap:boolean;projected:number;observed:number;unclassified:number;pending:number;invalid:number}) {
+  if(input.sampleCount===undefined)return 'STATS_UNAVAILABLE';
+  if(input.sampleCount>0)return null;
+  if(!input.calibrated&&!input.projected)return 'NEEDS_CALIBRATION';
+  if(input.calibrated&&!input.calibrationOverlap&&!input.projected)return 'OUTSIDE_CALIBRATION';
+  if(input.phase!=='ALL'&&input.unclassified>0)return 'UNCLASSIFIED';
+  if(!input.model&&input.pending>0)return 'UNCONFIRMED';
+  if(input.invalid>0)return 'INCOMPLETE';
+  if(!input.observed&&!input.projected)return 'NO_BALL_EVIDENCE';
+  if(!input.projected)return 'NO_VALID_LANDING';
+  if(input.model)return 'NO_PHASE_ESTIMATE';
+  return 'NO_CONFIRMED_PHASE';
+}
 
 export function nearestIndex(times: number[], time: number, tolerance: number): number {
   let lo=0,hi=times.length;

@@ -4,14 +4,15 @@ export type Frame = [number, number | null, number | null];
 export type Point3 = [number, number, number];
 export type Phase = 'SERVE' | 'RECEIVE' | 'RALLY' | 'UNKNOWN';
 export interface LandingReview { rally_id: string; time_ms: number; phase: Phase; status: 'CONFIRMED' | 'REJECTED' }
-export interface Review { version: number; timeline_version: number; analysis_artifact_id?:string|null; stale: boolean; corners: Point2[] | null; calibration_start_ms: number; calibration_end_ms: number; reviews: LandingReview[] }
+export interface TableCalibration {id:string;corners:Point2[];start_ms:number;end_ms:number}
+export interface Review { version: number; timeline_version: number; analysis_artifact_id?:string|null; stale: boolean; calibrations?:TableCalibration[]; corners: Point2[] | null; calibration_start_ms: number; calibration_end_ms: number; reviews: LandingReview[] }
 export interface Placement extends Omit<LandingReview, 'status'> { table_xy: Point2 | null; image_xy: Point2 | null; side: string; lateral: string; depth: string; status: 'CONFIRMED' | 'REJECTED' | 'CANDIDATE'; basis?: string; quality?: {judged?: boolean; seen?: boolean; depth_known?: boolean; lateral_known?: boolean} }
 export interface PosePerson { player_id?: string; position: 'NEAR' | 'FAR' | 'UNKNOWN'; world: (Point3 | null)[]; image: (Point2 | null)[]; angles: Record<string, number | null>; interpolated?: boolean; quality?: {hidden?: boolean; arm_repair?: number} }
 export interface Pose { coordinate_space?: string; image_space?: string; joint_schema?: string; unit?: string; fps: number; bones: [number,number][]; frames: {time_ms: number; people: PosePerson[]}[]; limitations: string[] }
 export interface Ball3D { coordinate_space: 'TABLE_METERS_Z_UP'; unit: 'm'; segments: {start_ms: number; end_ms: number; frames: [number,number,number,number][]; fit?: string; status: string}[]; gaps: {start_ms:number;end_ms:number}[] }
 export interface Stroke { id: string; source_rally_id: string; ordinal: number; contact_ms: number; start_ms:number;end_ms:number; actor:string; phase:Phase; spin:string; status:string }
 export interface PhaseGrid { sample_count: number; grid: number[][];unknown_count?:number }
-export interface Statistics { candidate_count: number; confirmed_count: number; phases: Record<Exclude<Phase,'UNKNOWN'>, PhaseGrid>; coordinate_note: string; model_estimates?: {sample_count?:number; candidate_count?:number;unknown_count?:number;excluded_count?:number; phases: Record<Exclude<Phase,'UNKNOWN'>, PhaseGrid>} }
+export interface Statistics { candidate_count: number; confirmed_count: number; all_placements?:PhaseGrid; unclassified_count?:number; unknown_count?:number; phases: Record<Exclude<Phase,'UNKNOWN'>, PhaseGrid>; coordinate_note: string; model_estimates?: {sample_count?:number; candidate_count?:number;unknown_count?:number;excluded_count?:number;all_placements?:PhaseGrid;unclassified_count?:number; phases: Record<Exclude<Phase,'UNKNOWN'>, PhaseGrid>} }
 export interface Biomechanics {stroke_id:string;source_rally_id:string;player_id:string;contact_ms:number;start_ms:number;end_ms:number;status:string;summary:string;phases:{start_ms:number;end_ms:number;keyframe_ms:number;label:string;cue:string}[];quality:{effective_fps:number;order_reliable:boolean;energy_reliable:boolean};provenance:{provider:string;model:string;requires_coach_review:boolean}}
 export interface Replay {
   video_id: string; rally_id: string; timeline_version: number; evidence_available: boolean;
@@ -34,5 +35,5 @@ export const replayApi = {
   },
   get: (video: string, rally: string, version: number, start: number) => apiRequest<Replay>(`/videos/${video}/rallies/${rally}/replay?timeline_version=${version}&start_ms=${start}`),
   statistics: (video: string, version: number) => apiRequest<Statistics>(`/videos/${video}/replay-statistics?timeline_version=${version}`),
-  save: (video: string, review: Review, corners: Point2[] | null, reviews: LandingReview[], start: number, end: number) => apiRequest<Review>(`/videos/${video}/replay-review`, {method:'PUT',body:{base_version:review.version,timeline_version:review.timeline_version,analysis_artifact_id:review.analysis_artifact_id??null,corners,reviews,calibration_start_ms:start,calibration_end_ms:end,fixed_camera:true}}),
+  save: (video: string, review: Review, calibrations:TableCalibration[], reviews: LandingReview[]) => apiRequest<Review>(`/videos/${video}/replay-review`, {method:'PUT',body:{base_version:review.version,timeline_version:review.timeline_version,analysis_artifact_id:review.analysis_artifact_id??null,calibrations,reviews,fixed_camera:true}}),
 };
