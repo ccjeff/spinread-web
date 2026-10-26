@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import TopBar from "../components/TopBar";
 import QuizVideo from "../components/QuizVideo";
+import QuizEvidenceReplay from "../components/QuizEvidenceReplay";
 import { quizApi, SPINS, LENGTHS, RECEIVES } from "../api/quiz";
 import type { QuizAnswer, QuizAttempt, QuizItem } from "../api/quiz";
 
@@ -35,11 +36,11 @@ function Exercise({item, onNext, onCompleted}: {item: QuizItem; onNext: () => vo
   }
   return <div className="quiz-practice-grid"><section>
     <div className="quiz-step">{result ? "03 / 看后续 · 复盘自己的判断" : watched ? "02 / 做判断 · 选择你的接法" : "01 / 观察发球 · 接球前自动暂停"}</div>
-    <QuizVideo key={result ? "continuation" : "prompt"} videoId={item.video_id} startMs={result ? item.pause_ms : item.start_ms} endMs={result ? item.end_ms : item.pause_ms} onBoundary={() => setWatched(true)}/>
+    <>{result?<QuizEvidenceReplay item={item}/>:<QuizVideo videoId={item.video_id} startMs={item.start_ms} endMs={item.pause_ms} onBoundary={() => setWatched(true)}/>}</>
     <p className="quiz-note">{result ? "真实接球结果用于对照观察，不代表唯一正确接法。" : "可以重播和慢放。提交判断后才能观看这次接球的后续画面。"}</p>
   </section><section className="card quiz-answer">
     <h2>{result ? "你的观察已记录" : "如果是你，这一球怎么接？"}</h2>
-    <p className="muted">私人观察练习 · 参考答案尚未核实 · 不计分</p>
+    <p className="muted">私人观察练习 · 教练参考在作答后揭示 · 不计分</p>
     {error && <p className="banner banner-error" role="alert">{error}</p>}
     {result ? <><p className="quiz-feedback">{result.feedback}</p><dl className="quiz-recap"><dt>旋转判断</dt><dd>{SPINS[result.answer.spin as keyof typeof SPINS]}</dd><dt>长短判断</dt><dd>{LENGTHS[result.answer.length as keyof typeof LENGTHS]}</dd><dt>接法选择</dt><dd>{RECEIVES[result.answer.receive as keyof typeof RECEIVES]}</dd><dt>自信程度</dt><dd>{result.confidence} / 5</dd></dl>{result.answer.note && <blockquote>{result.answer.note}</blockquote>}<button className="btn btn-primary" onClick={onNext}>下一条练习</button></> : <form onSubmit={e => {e.preventDefault(); void submit();}}>
       {([["spin", "你判断的旋转", SPINS], ["length", "来球长短", LENGTHS], ["receive", "你会选择的接法", RECEIVES]] as const).map(([key, label, options]) => <label className="field" key={key}><span>{label}</span><select disabled={busy || pendingRequest} value={answer[key]} onChange={e => setAnswer({...answer, [key]: e.target.value})}>{Object.entries(options).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>)}

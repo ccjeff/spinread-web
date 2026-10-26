@@ -19,14 +19,20 @@
   - 失败态：红色横幅 + `error_code`
   - 就绪（READY / PARTIAL_READY）：
     - HLS 播放器（hls.js，`xhrSetup` 注入 Bearer token）
-    - **层级片段列表**：顶层活动段为组（类型徽章 / 起止 / 时长 / 置信度），下挂 RALLY 回合子行（序号、起止、时长、击球数、置信度）；HIT_CANDIDATE 不单独成行。点击段 / 回合 seek 到 `start-800ms` 播放，到 `end+1200ms` 自动暂停；当前片段高亮；「全部播放」取消区间限制
+    - **右侧事件导航**：独立滚动的回合列表，默认合并父活动段与子回合的重复展示；「全部节点」可查看捡球、休息、讲解和未标记片段。支持按训练段、训练类型筛选，以及「定位当前」。点击回合 seek 到 `start-800ms` 播放，到 `end+1200ms` 自动暂停；「连续播放」取消区间限制。窄屏时列表移到播放器下方，仍独立滚动；编辑模式保留完整层级。
     - **时间线编辑**：「编辑时间线」开关；顶层段支持起 / 终点 ±0.1s、±1s 微调、类型下拉、「在此拆分」（取播放器播放头）、「与下一段合并」、删除；RALLY 行支持边界微调与删除。修改本地暂存（脏标记 + 离开页面拦截），底部「保存修改（N 项修改）」一次提交（同一 item 多次微调合并为一个 op）；成功后刷新时间线与报告并提示「指标正在重算」；409 版本冲突时自动刷新并提示重新应用
     - **报告面板**：指标卡片（有效训练时长 / 回合数 / 平均回合时长 / 最长回合 / 每回合击球均值 / 置信度覆盖率）+ 回合长度分布 CSS 直方图 + 训练发现（类别中文映射、样本数、LOW_EVIDENCE 淡显、点击证据区间 seek 播放器）；报告未生成（404）时容忍；时间线版本领先报告时显示「指标正在重算」并每 3s 轮询
     - **片段导出**：顶层段与 RALLY 行均可「导出」为 mp4（创建后轮询状态 2s，READY 变「下载」，fetch blob + `a[download]`，文件名 `{视频名}_{起}-{止}.mp4`）；回合行 checkbox 多选 + 「生成集锦（N）」合成 highlight reel（下载 `{视频名}_集锦_N段.mp4`，下载 URL 按 kind 拼 `/clips` 或 `/highlight-reels` 路径）；进入页面时已有的导出直接显示「下载」
     - **手动重跑**：「重新分析」按钮（confirm 后 POST `pipeline-runs`，409 提示「已有分析在进行中」），触发后页面切回轮询模式
-    - 胶片条：每 5s 一张缩略图横向滚动（fetch blob + `URL.createObjectURL` 以携带鉴权头，404 即停止），点击缩略图 seek
+    - **关键节点时间线**：替代固定 5s 缩略图，用整场训练段色块呈现时间分布，点击后播放并筛选对应回合；支持拖动播放头、上一回合和下一回合。
     - PARTIAL_READY 顶部提示「部分分析不可用」+ limitations
   - READY 前请求时间线 / 报告返回 404 时前端容忍（提示「时间线尚未生成」）
+
+## 训练类型与导航分组
+
+导航读取回合或父活动段的可选 `attributes.training_type`：`FIXED_POINT`（定点）、`MULTIBALL`（多球）、`SERVE_RECEIVE`（发接发）。缺失或未知值展示为「未分类」，不会将 `RALLY` 或 `RALLY_LIKE` 自动视为定点训练；本次 UI 改动不新增分类器、不改写标注。
+
+同类型相邻回合之间间隔不足 30 秒时归为一个导航训练段；较长间隔或类型变化开始新段。分组仅用于浏览，不合并源回合、击球数或导出边界。未来分类器输出上述属性后，时间线颜色和筛选直接生效。
 
 ## 依赖后端
 
@@ -50,6 +56,8 @@ npm run dev      # http://localhost:5173，/api 由 vite proxy 转发到 http://
 ## 构建
 
 ```bash
+npm test         # Node 22.18+ / 24：导航分组、标签继承、去重、前后回合边界
+npm run lint
 npm run build    # tsc -b && vite build，产物输出到 dist/
 ```
 
@@ -63,7 +71,7 @@ src/
 │   └── types.ts    #   与后端契约对齐的类型定义
 ├── auth/           # AuthContext + RequireAuth 路由守卫
 ├── components/     # Player / SegmentTree / EditControls / ReportPanel / ExportButton
-│                   # Filmstrip / StatusBadge / ProgressBar / TopBar
+│                   # SessionTimeline / EventPanel / StatusBadge / ProgressBar / TopBar
 ├── hooks/          # useExports（片段/集锦导出：创建、2s 轮询、blob 下载）
 ├── pages/          # LoginPage / VideoListPage / UploadPage / VideoDetailPage
 └── utils/          # 时间与文件大小格式化、状态与类型中文文案
@@ -77,8 +85,8 @@ src/
 - 视频列表：
 - 上传页：
 - 视频详情（处理中）：
-- 视频详情（片段播放 + 胶片条）：
-- 视频详情（报告面板 + 层级片段列表）：
+- 视频详情（片段播放 + 关键节点时间线）：
+- 视频详情（右侧事件导航 + 折叠报告）：
 - 视频详情（时间线编辑模式）：
 
 
@@ -106,3 +114,37 @@ src/
 教练登录后首页自动进入 `/coach`，球员仍进入视频列表。工作台展示我的球员、按状态筛选的评审队列、授权视频、任务状态、球员反馈及复测记录。支持按姓名查找球员，从视频进入只读报告页或训练计划。教练自己的视频位于 `/library`。
 
 统计只覆盖当前已授权、未删除的视频；复测必须同时拥有源视频和复测视频访问许可。新教练的空状态说明如何让球员添加其邮箱并授权。浏览器验收采用隔离内存数据，无真实授权改动。
+
+
+## 人工训练脉络
+
+- 点击已有训练段，再点「标注选中训练段」；已标注段显示「编辑本段标注」。
+- 点「拉选合并」后，在色块区域横向拖动（支持反向拖动、跨空白），松开后在右侧标注；「输入区间」提供键盘和窄屏替代入口。时间可精确输入到毫秒，至少选择 1 秒。
+- 填写供球方式（连续对打、多球、发接发、其他）、移动方式（定点、两点、多点）、本段目标球员；动作按顺序记录正反手、技术、来球旋转和跑位说明，支持自定义技术和备注。
+- 保存时只覆盖选中区间，左右未选中的人工标注保留。原回合和击球记录、导出边界不变；一个跨边界的回合按最大重叠归入一个训练段，不重复计数。
+- 人工标注存在视频级独立版本中，刷新和重新分析不会覆盖。并发保存冲突会刷新底层区间并保留表单，检查后可重试。移除人工标注后该范围恢复自动导航。
+- 视频所有者可编辑；后端读取沿用视频访问授权。此功能不自动生成题库、不把训练计划当成逐拍识别结果。
+- 后端先执行 `alembic upgrade head`（迁移 `0006_training_annotations`）再启动。
+
+## 单脉络 AI 分析
+
+视频详情选择训练脉络后点击“分析本段”。右侧可选择近端／远端目标、关注点和同一球员的历史同类训练，显示进度、历史记录、可回放证据、具体练习步骤与达标／复测标准。API key 由服务端配置，用户无需输入或勾选提供商授权；模型、采样、费用与 token 信息不对用户展示。历史训练需供球方式、移动模式和有序动作匹配，选择后表示确认同一球员。后端运行说明见兄弟仓库 `spinread-server/docs/chapter-analysis.md`。
+
+## 逐拍、落点与同步 3D 复盘
+
+视频详情中的复盘播放器支持逐拍触球导航、球路／骨架叠加、0.25× 慢放、可旋转 3D 骨架、原视频与 3D 并排对照。「落点与发接发」面板默认显示「全部落点／候选估计」；本地候选即使尚未归类为发球、接发或相持，也会计入有效坐标的总分布。人工确认单独统计，阶段未知不会自动变成发接发样本。缺失证据、尚未标定、区间不匹配及尚未人工确认分别说明。需要新版后端与 `0008_replay_reviews` 迁移；详见相邻 `spinread-server/docs/evidence-replay.md`。
+
+落点面板可直接进入球台标定，按视频画面中的远左 → 远右 → 近右 → 近左点击四角。每段标定只对应机位固定的原视频区间，新增默认当前回合；多个区间可首尾相接但不能重叠。已保存区间列表会标明当前生效项，可定位后调整。修改一个区间会保留其他机位，并仅让受影响区间内的旧落点确认退出统计；旧版单区间标定仍可读取。教练页面沿用只读权限。
+
+
+### Pingpong3D replay and coaching integration
+
+The existing video, coach review and authorized coach video pages share the same replay component. Existing timelines and recordings remain usable while supplementary analysis runs. `SPINREAD_API_PROXY` configures the development API target (default `http://localhost:8000`); an isolated preview can use `SPINREAD_API_PROXY=http://127.0.0.1:8012 npm run dev -- --port 5182`.
+
+- Per-contact navigation and source-video clock drive 2D observations, NLF41/MediaPipe bones and court-aligned 3D ball flights. Fitted ball interpolation stays within one segment and never bridges missing data. NLF table coordinates use metres with Z up; legacy MediaPipe image padding and hip-relative coordinates stay separate. This viewer renders skeletons, not SMPL mesh vertices.
+- Landing distributions separate automatic estimates from human confirmations. Unknown depth/lateral coordinates do not enter automatic grid totals; review writes pin the exact analysis artifact and timeline version. Coaches see the same evidence but cannot start analysis or change owner calibration.
+- An owner can supplement an existing video using the engines reported by the server. Pingpong3D requires operator configuration and two explicit handedness/shirt-colour selections. Missing models/GPU and partial results are visible; no paid worker is provisioned by this client.
+- Replay contacts can generate draft receiving exercises. The original bounded prompt player remains in place. Post-attempt evidence and coach reference answers load only after a successful submission; the API independently enforces the attempt gate.
+- Coaches can save versioned reference answers with multiple acceptable receives, uncertainty, diagnosis and the specific contact evidence. A reference can be carried into a training task through the existing plan workflow; previous attempts, answer versions and task records are retained.
+
+Verification: `npm test`, `npm run build`, `npm run lint`. Coordinate, image-aspect and missing-trajectory cases have deterministic unit coverage. GPU/model accuracy is a backend validation responsibility; the frontend never converts model output into an automatic skill score.

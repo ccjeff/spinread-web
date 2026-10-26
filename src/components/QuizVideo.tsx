@@ -4,12 +4,14 @@ import { getToken } from "../api/client";
 
 // Practice has no unrestricted native scrubber. Guard seeks and playback on
 // every animation frame, stopping slightly early to avoid revealing the receive.
-export default function QuizVideo({videoId, startMs, endMs, onBoundary}: {
-  videoId: string; startMs: number; endMs: number; onBoundary?: () => void;
+export default function QuizVideo({videoId, startMs, endMs, onBoundary, onTimeUpdate, seekMs,seekSequence}: {
+  videoId: string; startMs: number; endMs: number; onBoundary?: () => void; onTimeUpdate?:(ms:number)=>void;seekMs?:number;seekSequence?:number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const boundary = useRef(onBoundary);
+  const clock = useRef(onTimeUpdate);
   useEffect(() => {boundary.current = onBoundary;}, [onBoundary]);
+  useEffect(() => {clock.current = onTimeUpdate;}, [onTimeUpdate]);
   const [ready, setReady] = useState(false);
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +42,7 @@ export default function QuizVideo({videoId, startMs, endMs, onBoundary}: {
         v.pause();
         if (!reached) {reached = true; boundary.current?.();}
       }
+      clock.current?.(Math.round(Math.min(end,Math.max(start,v.currentTime))*1000));
     };
     const tick = () => {guard(); if (!stopped) frame = requestAnimationFrame(tick);};
     const seeking = () => {setVisible(false); guard();};
@@ -58,6 +61,7 @@ export default function QuizVideo({videoId, startMs, endMs, onBoundary}: {
       v.removeEventListener("seeking", seeking); v.removeEventListener("timeupdate", guard);
     };
   }, [videoId, startMs, endMs]);
+  useEffect(()=>{if(ready&&seekMs!==undefined&&ref.current){ref.current.pause();ref.current.currentTime=Math.min(endMs-60,Math.max(startMs,seekMs))/1000;}},[seekMs,seekSequence,ready,startMs,endMs]);
 
   async function play(restart: boolean) {
     const v = ref.current; if (!v) return;

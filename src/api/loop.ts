@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import type { User } from "./types";
+import type {ReferenceAnswer} from './quiz';
 
 const pending = new Map<string, string>();
 async function mutation<T>(path: string, body: unknown, method = "POST"): Promise<T> {
@@ -14,13 +15,14 @@ export interface Context {practice_context: string; target_identity: string; cam
 export interface ContextData {version: number; context: Partial<Context>}
 export interface Drill {description: string; target_repetitions: number; sessions: number}
 export interface Criteria {context: string; metric: string; minimum_samples: number; direction: "increase" | "decrease"; relative_threshold: number}
-export interface PlanItem {id: string; plan_id: string; source_report_id: string; video_id: string; version: number; priority: number; title: string; finding_ids: string[]; drill: Drill; retest: Criteria; source: string; locked_by_coach: boolean; status: string; player_note: string; baseline_stale: boolean; history: {version: number; title: string; source: string; changed_at: string}[]}
+export interface PlanItem {id: string; plan_id: string; source_report_id: string; video_id: string; version: number; priority: number; title: string; finding_ids: string[]; drill: Drill; retest: Criteria; source: string; locked_by_coach: boolean; status: string; player_note: string; baseline_stale: boolean; reference_answer_id?:string|null; history: {version: number; title: string; source: string; changed_at: string}[]}
 export interface Plan {id: string; user_id: string; state: string; items: PlanItem[]}
 export interface Retest {id: string; video_id: string; plan_item_version: number; created_at: string; result: {comparable: boolean; reasons: string[]; relative_change: number | null; delta: number | null; success: boolean | null; metric: string; baseline: {value: number | null}; retest: {value: number | null}; limitations: string[]}}
 export interface CoachGrant {id: string; player_id: string; player_name: string; coach_id: string; coach_name: string; coach_email: string; status: string; version: number}
 export interface Consent {id: string; video_id: string; granted_to: string; purpose: string; state: string; version: number}
 export interface Review {id: string; video_id: string; filename: string; player_id: string; player_name: string; coach_id: string; coach_name: string; status: string; version: number; timeline_version: number; question: string; stale: boolean; created_at: string}
-export interface ReviewDetail extends Review {feedback: {id: string; body: string; start_ms: number | null; end_ms: number | null; provenance: {source: string; source_id: string}; created_at: string}[]; practice_notes: {start_ms: number; answer: {note: string; spin: string; length: string; receive: string}; confidence: number; created_at: string}[]}
+export interface PracticeNote {quiz_item_id?:string;item_version?:number;timeline_version?:number;replay_artifact_id?:string|null;stale?:boolean;contact_ms?:number;pause_ms?:number;end_ms?:number;rally_id?:string|null;start_ms:number;answer:{note:string;spin:string;length:string;receive:string};confidence:number;created_at:string}
+export interface ReviewDetail extends Review {feedback: {id: string; body: string; start_ms: number | null; end_ms: number | null; provenance: {source: string; source_id: string}; created_at: string}[]; practice_notes: PracticeNote[];reference_answers?:ReferenceAnswer[]}
 export interface CoachDashboard {
   summary: {players: number; pending_reviews: number; active_tasks: number; retests: number};
   reviews: Review[];
@@ -37,7 +39,7 @@ export const loopApi = {
   saveContext: (id: string, version: number, context: Context) => mutation<ContextData>(`/videos/${id}/context`, {base_version: version, ...context}, "PATCH"),
   plan: (id: string) => apiRequest<{plan: Plan | null}>(`/users/${id}/training-plans/active`),
   generate: (reportId: string) => mutation<{plan: Plan; added: number}>("/training-plans/generate", {report_id: reportId}),
-  createItem: (body: {report_id: string; title: string; priority: number; drill: Drill; retest: Criteria}) => mutation<PlanItem>("/training-plans/items", body),
+  createItem: (body: {report_id: string; title: string; priority: number; drill: Drill; retest: Criteria;reference_answer_id?:string}) => mutation<PlanItem>("/training-plans/items", body),
   editItem: (item: PlanItem, changes: Record<string, unknown>) => mutation<PlanItem>(`/training-plans/${item.plan_id}/items/${item.id}`, {base_version: item.version, ...changes}, "PATCH"),
   retests: (item: PlanItem) => apiRequest<{items: Retest[]}>(`/training-plans/${item.plan_id}/items/${item.id}/retests`),
   retest: (item: PlanItem, videoId: string) => mutation<Retest>(`/training-plans/${item.plan_id}/items/${item.id}/retests`, {base_version: item.version, video_id: videoId}),
@@ -51,6 +53,7 @@ export const loopApi = {
   queue: (coachId: string) => apiRequest<{items: Review[]}>(`/coaches/${coachId}/review-queue`),
   requestReview: (videoId: string, coachId: string, question: string) => mutation<Review>("/review-requests", {video_id: videoId, coach_id: coachId, question}),
   review: (id: string) => apiRequest<ReviewDetail>(`/review-requests/${id}`),
+  referenceAnswer: (r:Review,n:PracticeNote,answer:ReferenceAnswer['answer'],diagnosis:ReferenceAnswer['diagnosis']) => mutation<ReviewDetail>(`/review-requests/${r.id}/quiz-reference-answers`,{base_version:r.version,quiz_item_id:n.quiz_item_id,quiz_item_version:n.item_version,timeline_version:r.timeline_version,answer,evidence:{rally_id:n.rally_id,contact_ms:n.contact_ms,replay_artifact_id:n.replay_artifact_id??null},diagnosis}),
   feedback: (r: Review, body: string, complete: boolean, interval?: {start_ms: number; end_ms: number}) => mutation<ReviewDetail>(`/review-requests/${r.id}/feedback`, {base_version: r.version, body, complete, ...interval}),
   cancelReview: (r: Review) => mutation<Review>(`/review-requests/${r.id}/cancel`, {base_version: r.version}),
 };
