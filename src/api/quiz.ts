@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type {Replay} from './replay';
 
 export const PRACTICE_TYPES = {RALLY: "连续对练", SERVE_RECEIVE: "发接发练习", OTHER: "其他 / 停顿", UNKNOWN: "不确定"};
 export type PracticeType = keyof typeof PRACTICE_TYPES;
@@ -30,7 +31,20 @@ export interface QuizAttempt {
   id: string; quiz_item_id: string; answer: QuizAnswer; confidence: number;
   scored: boolean; feedback: string; created_at: string;
 }
+export interface ReferenceAnswer {
+  id:string;quiz_item_id:string;quiz_item_version:number;version:number;coach_id:string;created_at:string;
+  answer:{spin:string;length:string;acceptable_receives:string[];note:string};
+  evidence:{rally_id:string;contact_ms:number};diagnosis:'READING'|'EXECUTION'|'MIXED'|'UNKNOWN';
+}
+export interface QuizEvidence {quiz_item_id:string;item_version:number;timeline_version:number;rally_id:string|null;replay:Replay|null;reference_answers:ReferenceAnswer[]}
+const replayKeys=new Map<string,string>();
 export const quizApi = {
+  evidence: (id:string) => apiRequest<QuizEvidence>(`/quiz-items/${id}/evidence`),
+  fromReplay: async (video:string,version:number,rallies?:string[]) => {
+    const signature=JSON.stringify([video,version,rallies]),key=replayKeys.get(signature)??crypto.randomUUID();replayKeys.set(signature,key);
+    const result=await apiRequest<{items:QuizItem[]}>(`/videos/${video}/replay-quiz-candidates`,{method:'POST',body:{timeline_version:version,rally_ids:rallies??[]},headers:{'Idempotency-Key':key}});
+    replayKeys.delete(signature);return result;
+  },
   reviewPractice: (videoId: string, window: PracticeWindow, timelineVersion: number, label: PracticeType | null) => apiRequest<PracticeContextData>(`/videos/${videoId}/practice-windows/${window.id}/review`, {method: "POST", body: {timeline_version: timelineVersion, revision: window.revision, label}}),
   list: (id: string) => apiRequest<QuizCollection>(`/videos/${id}/quiz-items`),
   generate: (id: string) => apiRequest(`/videos/${id}/quiz-candidates`, {method: "POST"}),

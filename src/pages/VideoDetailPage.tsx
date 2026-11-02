@@ -1,3 +1,7 @@
+import {rallySelection} from "../utils/rallySelection";
+import TrainingAnnotationEditor from "../components/TrainingAnnotationEditor";
+import type {AnnotationDraft} from "../components/TrainingAnnotationEditor";
+import {useTrainingAnnotations} from "../hooks/useTrainingAnnotations";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
@@ -14,12 +18,15 @@ import type {
 import TopBar from "../components/TopBar";
 import StatusBadge from "../components/StatusBadge";
 import ProgressBar from "../components/ProgressBar";
-import Player from "../components/Player";
+import AnalysisPlayer from "../components/AnalysisPlayer";
 import type { PlayerHandle } from "../components/Player";
-import SegmentTree from "../components/SegmentTree";
+import EventPanel from "../components/EventPanel";
+import ChapterAnalysisPanel from "../components/ChapterAnalysisPanel";
+import SessionTimeline from "../components/SessionTimeline";
+import { buildTrainingNavigation } from "../utils/trainingTimeline";
+import type { TrainingChapter } from "../utils/trainingTimeline";
 import type { PendingEdit } from "../components/EditControls";
 import ReportPanel from "../components/ReportPanel";
-import Filmstrip from "../components/Filmstrip";
 import { useExports } from "../hooks/useExports";
 import type { ExportEntry } from "../hooks/useExports";
 import { formatDateTime, formatMs } from "../utils/format";
@@ -109,10 +116,21 @@ export default function VideoDetailPage() {
   const [reportUnavailable, setReportUnavailable] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [currentMs, setCurrentMs] = useState(0);
+  const [chapterId, setChapterId] = useState("all");
+  const [analysisChapter, setAnalysisChapter] = useState<TrainingChapter | null>(null);
+  const [navigationRequest, setNavigationRequest] = useState(0);
+  const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [pending, setPending] = useState<Record<string, PendingEdit>>({});
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [deleteDraft, setDeleteDraft] = useState<{title: string; items: TimelineItem[]; version: number} | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const deletePanelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {if (deleteDraft) deletePanelRef.current?.scrollIntoView({block: "nearest", behavior: "smooth"});}, [deleteDraft]);
+  const [mergePreview, setMergePreview] = useState(false);
+  const selection = useMemo(() => rallySelection(timeline?.items ?? [], selected), [timeline, selected]);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const playerRef = useRef<PlayerHandle | null>(null);
   const rangeEndRef = useRef<number | null>(null);
@@ -121,6 +139,8 @@ export default function VideoDetailPage() {
   const toastTimer = useRef<number | null>(null);
 
   const ready = video !== null && isReadyState(video.state);
+  const annotations = useTrainingAnnotations(ready ? id : undefined);
+  const navigation = useMemo(() => buildTrainingNavigation(timeline?.items ?? [], annotations.document?.segments ?? []), [timeline, annotations.document]);
   const failure = video !== null && isFailureState(video.state);
   const processing = video !== null && isProcessingState(video.state);
 
@@ -147,6 +167,11 @@ export default function VideoDetailPage() {
     setReportUnavailable(false);
     setLoadError(null);
     setActiveItemId(null);
+    setCurrentMs(0);
+    setAnnotationDraft(null);
+    setAnalysisChapter(null);
+    setDeleteDraft(null); setDeleteError(""); setMergePreview(false);
+    setChapterId("all");
     setEditMode(false);
     setPending({});
     setSelected(new Set());
@@ -300,6 +325,7 @@ export default function VideoDetailPage() {
     const startSec = Math.max(0, item.start_ms - PRE_ROLL_MS) / 1000;
     rangeEndRef.current = (item.end_ms + POST_ROLL_MS) / 1000;
     setActiveItemId(item.item_id);
+    setCurrentMs(startSec * 1000);
     playerRef.current?.seekTo(startSec);
     playerRef.current?.play();
   }, []);
@@ -311,6 +337,7 @@ export default function VideoDetailPage() {
   }, []);
 
   const handleTimeUpdate = useCallback((seconds: number) => {
+    setCurrentMs(Math.round(seconds * 1000));
     if (rangeEndRef.current !== null && seconds >= rangeEndRef.current) {
       rangeEndRef.current = null;
       setActiveItemId(null);
@@ -319,17 +346,34 @@ export default function VideoDetailPage() {
   }, []);
 
   const handleSeek = useCallback((seconds: number) => {
+    setCurrentMs(Math.round(seconds * 1000));
     rangeEndRef.current = null;
     setActiveItemId(null);
     playerRef.current?.seekTo(seconds);
   }, []);
+
+  const selectChapter = useCallback((chapter: TrainingChapter) => {
+    setAnalysisChapter(null);
+    setChapterId(chapter.id);
+    setNavigationRequest(value => value + 1);
+    if (chapter.entries.length && !chapter.annotation) playSegment(chapter.entries[0].item);
+    else {
+      handleSeek(chapter.start_ms / 1000);
+      rangeEndRef.current = chapter.end_ms / 1000;
+      playerRef.current?.play();
+    }
+  }, [playSegment, handleSeek]);
 
   const refreshTimeline = useCallback(async () => {
     if (!id) return;
     try {
       const tl = await api.getActiveTimeline(id);
       setTimeline(tl);
+      setChapterId("all");
+      setActiveItemId(null);
+      rangeEndRef.current = null;
       setTimelineUnavailable(false);
+      return tl;
     } catch {
       setTimelineUnavailable(true);
     }
@@ -460,6 +504,57 @@ export default function VideoDetailPage() {
     });
   }, []);
 
+  function prepareDelete(title: string, items: TimelineItem[]) {
+    if (!timeline || saving || editMode || annotationDraft || !items.length) return;
+    playerRef.current?.pause(); rangeEndRef.current = null;
+    setMergePreview(false); setDeleteError("");
+    setDeleteDraft({title, items, version: timeline.version});
+  }
+
+  async function deleteSegments() {
+    if (!id || !deleteDraft || saving) return;
+    setSaving(true); setDeleteError("");
+    try {
+      await api.submitTimelineEdits(id, {base_timeline_version: deleteDraft.version,
+        operations: deleteDraft.items.map(item => ({op: "DELETE", timeline_item_id: item.item_id}))});
+      setSelected(new Set()); setActiveItemId(null); setDeleteDraft(null);
+      await refreshTimeline();
+      showToast("ok", "误标片段已删除，训练脉络已更新；原视频保留。");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setDeleteDraft(null); setSelected(new Set()); await refreshTimeline();
+        showToast("err", "时间线已更新，请重新选择要删除的片段");
+      } else setDeleteError(error instanceof Error ? error.message : "删除失败，请重试");
+    } finally {setSaving(false);}
+  }
+
+  async function mergeSelected() {
+    if (!id || !timeline || !selection.adjacent || selection.items.length < 2 || saving) return;
+    setSaving(true);
+    try {
+      await api.submitTimelineEdits(id, {base_timeline_version: timeline.version,
+        operations: [{op: "MERGE_RALLIES", timeline_item_ids: selection.items.map(item => item.item_id)}]});
+      setSelected(new Set()); setMergePreview(false);
+      const refreshed = await refreshTimeline();
+      const merged = refreshed?.items.find(item => item.type === "RALLY" && item.start_ms === selection.startMs && item.end_ms === selection.endMs);
+      if (merged) {
+        setSelected(new Set([merged.item_id])); setActiveItemId(merged.item_id);
+        if (navigation.chapters.some(chapter => chapter.id === chapterId && chapter.annotation)) setChapterId(chapterId);
+      }
+      showToast("ok", "已合并，准备时间已保留。可直接用于接发球练习。");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setSelected(new Set()); setMergePreview(false); await refreshTimeline();
+        showToast("err", "时间线已更新，请重新选择片段");
+      } else showToast("err", error instanceof Error ? error.message : "合并失败");
+    } finally {setSaving(false);}
+  }
+
+  function practiceSelected() {
+    if (!timeline || !selection.adjacent) return;
+    navigate(`/videos/${id}/quizzes?start=${selection.startMs}&end=${selection.endMs}&version=${timeline.version}`);
+  }
+
   const onCreateHighlight = useCallback(() => {
     const items = timeline?.items ?? [];
     const ids = items
@@ -487,12 +582,12 @@ export default function VideoDetailPage() {
 
   const rerun = useCallback(async () => {
     if (!id) return;
-    if (!window.confirm("将重新运行完整分析流水线，期间时间线与报告会暂时不可用。继续？")) {
+    if (!window.confirm("将重新运行完整分析流水线并生成新的时间线版本，期间时间线与报告会暂时不可用。原视频和训练记录会保留，旧版本的落点确认需要重新复核。如只需补充逐拍、落点与 3D，请使用播放器下方的“补充／更新复盘分析”。继续重建时间线？")) {
       return;
     }
     try {
       await api.createPipelineRun(id);
-      showToast("ok", "已触发重新分析");
+      showToast("ok", "已开始重建时间线");
       setStatus(null);
       setTimeline(null);
       setTimelineUnavailable(false);
@@ -508,7 +603,7 @@ export default function VideoDetailPage() {
       if (err instanceof ApiError && err.status === 409) {
         showToast("err", "已有分析在进行中");
       } else {
-        showToast("err", err instanceof Error ? err.message : "触发重新分析失败");
+        showToast("err", err instanceof Error ? err.message : "重建时间线失败");
       }
     }
   }, [id, showToast]);
@@ -517,7 +612,7 @@ export default function VideoDetailPage() {
     return (
       <div className="page">
         <TopBar />
-        <main className="container">
+        <main className="container video-detail-container">
           <div className="banner banner-error">{loadError}</div>
           <button type="button" className="btn btn-ghost" onClick={() => navigate("/")}>
             返回列表
@@ -531,7 +626,7 @@ export default function VideoDetailPage() {
     return (
       <div className="page">
         <TopBar />
-        <main className="container">
+        <main className="container video-detail-container">
           <p className="muted">加载中…</p>
         </main>
       </div>
@@ -546,7 +641,7 @@ export default function VideoDetailPage() {
   return (
     <div className="page">
       <TopBar />
-      <main className="container">
+      <main className="container video-detail-container">
         <div className="page-header">
           <div className="page-header-main">
             <h2 className="video-title">{video.filename}</h2>
@@ -567,6 +662,7 @@ export default function VideoDetailPage() {
               <button
                 type="button"
                 className={`btn ${editMode ? "btn-primary" : "btn-ghost"}`}
+                disabled={!!annotationDraft}
                 onClick={toggleEditMode}
               >
                 {editMode ? "退出编辑" : "编辑时间线"}
@@ -574,7 +670,7 @@ export default function VideoDetailPage() {
             )}
             {(ready || failure) && (
               <button type="button" className="btn btn-ghost" onClick={() => void rerun()}>
-                重新分析
+                重建时间线
               </button>
             )}
             <button type="button" className="btn btn-ghost" onClick={() => navigate("/")}>
@@ -630,40 +726,87 @@ export default function VideoDetailPage() {
 
         {ready && (
           <>
-            <Player ref={playerRef} videoId={video.id} onTimeUpdate={handleTimeUpdate} />
-            {durationMs > 0 && (
-              <Filmstrip videoId={video.id} durationMs={durationMs} onSeek={handleSeek} />
-            )}
-            <ReportPanel
-              report={report}
-              unavailable={reportUnavailable}
-              stale={reportStale}
-              onSeek={handleSeek}
-            />
-            {timelineUnavailable && !timeline && (
-              <div className="banner banner-warn">时间线尚未生成，暂无法展示片段列表。</div>
-            )}
-            <SegmentTree
-              items={timeline?.items ?? []}
-              activeItemId={activeItemId}
-              editMode={editMode}
-              pending={pending}
-              clipByItemId={clipByItemId}
-              selected={selected}
-              highlight={highlight}
-              onPlayItem={playSegment}
-              onPlayAll={playAll}
-              onNudge={onNudge}
-              onTypeChange={onTypeChange}
-              onSplit={onSplit}
-              onMergeNext={onMergeNext}
-              onDelete={onDelete}
-              onExport={requestClip}
-              onDownload={onDownload}
-              onToggleSelect={onToggleSelect}
-              onCreateHighlight={onCreateHighlight}
-              onDownloadHighlight={onDownloadHighlight}
-            />
+            <div className="review-workspace">
+              <div className="review-viewer">
+                <AnalysisPlayer ref={playerRef} videoId={video.id} timeline={timeline} currentMs={currentMs} activeItemId={activeItemId} onSeek={handleSeek} onTimeUpdate={handleTimeUpdate} />
+                <SessionTimeline chapters={navigation.chapters} entries={navigation.entries}
+                  durationMs={durationMs} currentMs={currentMs} chapterId={chapterId}
+                  draftRange={annotationDraft}
+                  annotationEnabled={!!annotations.document && !editMode && !annotationDraft && !saving && !deleteDraft}
+                  deletingDisabled={saving || editMode || !!annotationDraft || !!deleteDraft}
+                  onAnalyze={chapter => {playerRef.current?.pause(); setAnalysisChapter(chapter);}}
+                  onDeleteChapter={chapter => prepareDelete(`训练段 ${chapter.number} · ${formatMs(chapter.start_ms)}–${formatMs(chapter.end_ms)}`, chapter.entries.map(entry => entry.item))}
+                  onAnnotate={draft => {playerRef.current?.pause(); setAnnotationDraft(draft);}}
+                  activeItemId={activeItemId} onPlayAll={playAll}
+                  onChapter={selectChapter} onSeek={handleSeek}
+                  onPlay={entry => {setChapterId("all"); setNavigationRequest(value => value + 1); playSegment(entry.item);}} />
+                {annotations.error && <div className="banner banner-warn">人工标注加载失败：{annotations.error} <button className="btn btn-ghost btn-sm" onClick={annotations.reload}>重试</button></div>}
+                {timelineUnavailable && !timeline && <div className="banner banner-warn">时间线尚未生成，暂无法展示关键节点。</div>}
+              </div>
+              <div className="review-events">
+                {annotationDraft ? <TrainingAnnotationEditor
+                  onRangeChange={(start_ms, end_ms) => setAnnotationDraft(current => current ? {...current, start_ms, end_ms} : null)}
+                  draft={annotationDraft} segments={annotations.document?.segments ?? []}
+                  durationMs={durationMs} currentMs={currentMs} target={video.target_player.mode}
+                  onSeek={handleSeek} onClose={() => setAnnotationDraft(null)}
+                  onSave={async segments => {await annotations.save(segments); setChapterId("all"); showToast("ok", "训练标注已保存");}}/>
+                : analysisChapter && timeline ? <ChapterAnalysisPanel key={`${video.id}:${analysisChapter.id}:${analysisChapter.start_ms}:${analysisChapter.end_ms}`}
+                  videoId={video.id} chapter={analysisChapter} timelineVersion={timeline.version}
+                  annotationVersion={annotations.document?.version ?? 0} defaultTarget={video.target_player.mode}
+                  onClose={() => setAnalysisChapter(null)}
+                  onEvidence={(start, end) => {handleSeek(start / 1000); rangeEndRef.current = end / 1000; playerRef.current?.play();}}/>
+                : <EventPanel key={`${timeline?.timeline_id ?? video.id}:${navigationRequest}`}
+                  onRemoveItem={entry => prepareDelete(`回合 ${entry.ordinal} · ${formatMs(entry.item.start_ms)}–${formatMs(entry.item.end_ms)}`, [entry.item])}
+                  onRemoveSelected={() => prepareDelete(`所选 ${selection.items.length} 个回合`, selection.items)}
+                  onMergeSelected={() => setMergePreview(true)} onPracticeSelected={practiceSelected}
+                  selectionAdjacent={selection.adjacent} selectionBusy={saving || !!deleteDraft}
+                  onClearSelection={() => setSelected(new Set())}
+                  entries={navigation.entries} chapters={navigation.chapters}
+                  chapterId={chapterId} currentMs={currentMs} onChapterFilter={setChapterId}
+                  items={timeline?.items ?? []}
+                  activeItemId={activeItemId}
+                  editMode={editMode}
+                  pending={pending}
+                  clipByItemId={clipByItemId}
+                  selected={selected}
+                  highlight={highlight}
+                  onPlayItem={playSegment}
+                  onPlayAll={playAll}
+                  onNudge={onNudge}
+                  onTypeChange={onTypeChange}
+                  onSplit={onSplit}
+                  onMergeNext={onMergeNext}
+                  onDelete={onDelete}
+                  onExport={requestClip}
+                  onDownload={onDownload}
+                  onToggleSelect={onToggleSelect}
+                  onCreateHighlight={onCreateHighlight}
+                  onDownloadHighlight={onDownloadHighlight}
+                />}
+              </div>
+            </div>
+            {deleteDraft && <div ref={deletePanelRef} className="card delete-segment-panel" role="region" aria-label="确认删除误标片段">
+              <h2>删除 {deleteDraft.title}</h2>
+              <p>将删除以下 {deleteDraft.items.length} 个训练片段及其中的击球标记。原视频和历史时间线版本保留；已有练习题会进入待复核状态。</p>
+              <ul>{deleteDraft.items.map(item => <li key={item.item_id}>{formatMs(item.start_ms)}–{formatMs(item.end_ms)}</li>)}</ul>
+              <p className="muted">删除的是当前自动识别结果；人工填写的训练标签会保留。回合和自动训练段编号会重新排列。</p>
+              {deleteError && <p role="alert" className="banner banner-error">{deleteError}</p>}
+              <div className="quiz-toolbar"><button className="btn btn-danger" disabled={saving} onClick={() => void deleteSegments()}>{saving ? "正在删除…" : "确认删除片段"}</button>
+                <button className="btn btn-ghost" disabled={saving} onClick={() => setDeleteDraft(null)}>取消删除</button></div>
+            </div>}
+            {mergePreview && <div className="merge-dialog-backdrop"><section className="card merge-dialog" role="region" aria-label="确认合并相邻片段">
+              <h2>合并 {selection.items.length} 个相邻片段</h2>
+              <p>{formatMs(selection.startMs)}–{formatMs(selection.endMs)}，共 {formatMs(selection.endMs - selection.startMs)}。</p>
+              <p>保留片段之间的全部准备时间，保存为一个连续片段。原时间线版本保留；已有练习题将需要复核。</p>
+              <p className="muted">合并只修正片段边界，不会自动纠正其中误识别的击球。</p>
+              <div className="quiz-toolbar"><button className="btn btn-ghost" disabled={saving} onClick={() => {handleSeek(selection.startMs / 1000); rangeEndRef.current = selection.endMs / 1000; playerRef.current?.play();}}>预览完整区间</button>
+                <button className="btn btn-primary" disabled={saving || !selection.adjacent || selection.items.length < 2} onClick={() => void mergeSelected()}>{saving ? "正在合并…" : "确认合并"}</button>
+                <button className="btn btn-ghost" disabled={saving} onClick={() => setMergePreview(false)}>取消</button></div>
+            </section></div>}
+            <details className="session-report">
+              <summary>训练报告与教练协作 <span>时间线 v{timelineVersion}</span></summary>
+              <ReportPanel report={report} unavailable={reportUnavailable} stale={reportStale} onSeek={handleSeek} />
+            </details>
             {editMode && (
               <div className="edit-bar">
                 <span className="edit-bar-hint">
