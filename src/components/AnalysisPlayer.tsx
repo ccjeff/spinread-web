@@ -1,6 +1,7 @@
 import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from 'react';
 import Player from './Player';
 import PoseReplayView from './PoseReplayView';
+import AnalysisMetricsPanel from './AnalysisMetricsPanel';
 import BiomechanicsNotes from './BiomechanicsNotes';
 import {Link} from 'react-router-dom';
 import {quizApi} from '../api/quiz';
@@ -13,7 +14,7 @@ const formatMs=(ms:number)=>`${Math.floor(ms/60000).toString().padStart(2,'0')}:
 
 const phaseLabels={SERVE:'发球落点',RECEIVE:'接发落点',RALLY:'相持落点',UNKNOWN:'待确认'};
 const cornerNames=['远端左角','远端右角','近端右角','近端左角'];
-const engineNames={local:'本地视觉分析',pingpong3d:'Pingpong3D · 球台与人体',nlf:'NLF / SMPL · 人体网格'};
+const engineNames={local:'BlurBall 视觉分析',pingpong3d:'Pingpong3D · 球台与人体',nlf:'NLF / SMPL · 人体网格'};
 const nlfMissing:Record<string,string>={NLF_WEIGHTS_MISSING:'缺少 NLF 模型权重',SMPL_FACES_MISSING:'缺少 SMPL 网格拓扑',CUDA_UNAVAILABLE:'没有可用的 CUDA GPU',TORCH_MISSING:'尚未安装 PyTorch',TORCH_UNAVAILABLE:'PyTorch 无法加载',TORCHVISION_MISSING:'尚未安装 TorchVision',TORCHVISION_UNAVAILABLE:'TorchVision 无法加载',NLF_RUNTIME_MISSING:'NLF 运行环境尚未配置'};
 interface Props {videoId: string; timeline: ActiveTimeline | null; currentMs: number; activeItemId: string | null; onTimeUpdate: (seconds:number)=>void; onSeek:(seconds:number)=>void; readOnly?:boolean}
 
@@ -171,7 +172,8 @@ const AnalysisPlayer=forwardRef<PlayerHandle,Props>(function AnalysisPlayer({vid
       {!readOnly&&<>{analysis.available_engines.length>1&&<label>分析引擎<select value={engine} disabled={busy||analysisActive} onChange={e=>setEngine(e.target.value as ReplayEngine)}>{analysis.available_engines.map(e=><option key={e} value={e}>{engineNames[e]}</option>)}</select></label>}<button className="btn btn-primary btn-sm" disabled={busy||analysisActive||!analysis.available_engines.includes(engine)||!version||(engine==='pingpong3d'&&!playersReady)||(engine==='nlf'&&!analysis.nlf?.available)} onClick={()=>void analyze()}>{analysisActive?'正在分析…':'补充／更新复盘分析'}</button>{!analysis.available_engines.length&&<span className="muted">分析模型尚未配置</span>}</>}
       {analysis.error_code&&<span className="muted">{({NLF_RUNTIME_UNAVAILABLE:'NLF 模型或 CUDA 环境尚未就绪',NLF_ANALYSIS_FAILED:'NLF 人体网格分析失败，可以在检查运行环境后重试',BALL_3D_PARTIAL_COVERAGE:'三维球路仅在有限区间可用，未通过质量门限的区间保留缺口',GPU_NOT_CONFIGURED:'三维分析服务尚未配置',TABLE_CALIBRATION_REQUIRED:'需要先核对球台标定',NO_USABLE_EVIDENCE:'此视频尚未获得可用的视觉证据',ANALYSIS_TIMEOUT:'分析超时，可以重试',PINGPONG3D_ANALYSIS_FAILED:'三维分析失败，可以重试',POSE_UNAVAILABLE:'本次动作骨架不可用，已保留其他可用证据',PLACEMENTS_UNAVAILABLE:'本次落点估计不可用，已保留其他可用证据',BALL_3D_UNAVAILABLE:'本次三维球路不可用，已保留其他可用证据',POSE_NO_DETECTIONS:'本次未检测到可用的人体动作，请检查原片中的球员是否清晰可见'} as Record<string,string>)[analysis.error_code]??'本次分析未完成，请检查分析服务后重试'}</span>}
     </div>}
-    {analysis?.nlf&&<div className="nlf-runtime-status"><div className="replay-toolbar"><strong>NLF / SMPL 人体网格</strong><span>{analysis.nlf.available?'运行环境已就绪':'本机运行环境未就绪'}</span>{!readOnly&&<button className="btn btn-ghost btn-sm" disabled={busy||analysisActive||!version||!analysis.nlf.available||!analysis.available_engines.includes('nlf')} onClick={()=>void analyze('nlf')}>运行 NLF / SMPL</button>}</div><p className="replay-note">{analysis.nlf.available?'可按原片时间生成真实模型网格；已有视频、骨架和训练记录保留。':`缺少条件：${analysis.nlf.missing.map(code=>nlfMissing[code]??code).join('、')||'请检查 NLF 模型与 GPU 配置'}。当前已有的 MediaPipe 骨架与球路仍可独立查看。`}</p></div>}
+    <AnalysisMetricsPanel videoId={videoId}/>
+    {analysis?.nlf&&<div className="nlf-runtime-status"><div className="replay-toolbar"><strong>NLF / SMPL 人体网格</strong><span>{analysis.nlf.available?'运行环境已就绪':'人体网格分析尚未启用'}</span>{!readOnly&&<button className="btn btn-ghost btn-sm" disabled={busy||analysisActive||!version||!analysis.nlf.available||!analysis.available_engines.includes('nlf')} onClick={()=>void analyze('nlf')}>运行 NLF / SMPL</button>}</div><p className="replay-note">{analysis.nlf.available?'可按原片时间生成真实模型网格；已有视频、骨架和训练记录保留。':`缺少条件：${analysis.nlf.missing.map(code=>code==='REMOTE_NLF_NOT_ENABLED'?'云端尚未部署 NLF 模型及 SMPL 网格配置':nlfMissing[code]??code).join('、')||'请检查 NLF 模型与 GPU 配置'}。已有 MediaPipe 骨架属于独立结果，不表示 NLF 网格已生成。`}</p></div>}
     {!readOnly&&engine==='pingpong3d'&&analysis?.available_engines.includes('pingpong3d')&&<fieldset className="analysis-player-fields"><legend>本段视频的两位球员</legend>{players.map((p,i)=><div className="replay-toolbar" key={i}><span>球员 {i+1}</span><label>持拍手<select aria-label={`球员 ${i+1} 持拍手`} value={p.hand} disabled={analysisActive||busy} onChange={e=>setPlayers(old=>old.map((v,k)=>k===i?{...v,hand:e.target.value}:v))}><option value="">请选择</option><option value="right">右手</option><option value="left">左手</option></select></label><label>球衣主色<select aria-label={`球员 ${i+1} 球衣主色`} value={p.kit} disabled={analysisActive||busy} onChange={e=>setPlayers(old=>old.map((v,k)=>k===i?{...v,kit:e.target.value}:v))}><option value="">请选择</option>{Object.entries({red:'红',green:'绿',blue:'蓝',yellow:'黄',white:'白',black:'黑'}).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label></div>)}<p className="muted replay-note">两人的球衣主色需要可区分；持拍手用于解释落点和动作，不自动猜测。</p></fieldset>}
     {notice&&<p role="status" className="banner">{notice} {!readOnly&&<Link to={`/videos/${videoId}/quizzes`}>查看练习片段</Link>}</p>}
     {error&&<div className="banner banner-error" role="alert">{error} <button className="btn btn-ghost btn-sm" onClick={()=>setRevision(n=>n+1)}>刷新复盘</button></div>}
